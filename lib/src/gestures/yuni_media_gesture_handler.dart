@@ -146,42 +146,40 @@ class _YuniMediaGestureHandlerState extends State<YuniMediaGestureHandler>
 
     // --- 物理插值计算 ---
     double damping = 0.2;
-    double uiOffset = _rawDy < 0 ? _rawDy * damping : _rawDy;
-
+    double uiOffset = _rawDy < 0 ? _rawDy * damping : _rawDy; 
+    
     // 上滑进度: [_maxRawDy, 0] -> [1.0, 0.0]
     double maxRawDy = -screenHeight * 0.5 / damping;
     double upProgress = (_rawDy / maxRawDy).clamp(0.0, 2.0);
-
+    
     // 下滑进度: [0, screenHeight/2] -> [0.0, 1.0]
     double downProgress = (_rawDy / (screenHeight / 2)).clamp(0.0, 1.0);
 
-    // 1. 计算 Contain 态下的初始位置
-    double containScale = min(
-      screenWidth / mediaSize.width,
-      screenHeight / mediaSize.height,
-    );
+    // 1. 计算初始与目标状态
+    double containScale = min(screenWidth / mediaSize.width, screenHeight / mediaSize.height);
     double renderHeightAtContain = mediaSize.height * containScale;
     double initialTop = (screenHeight - renderHeightAtContain) / 2.0;
 
-    // 2. 抵顶即停逻辑
-    double currentTranslateY = max(0.0, initialTop * (1.0 - upProgress));
+    // 2. 关键：计算图片顶部在全屏坐标系中的相对 Alignment
+    // (-1.0 为顶部, 0.0 为中心, 1.0 为底部)
+    double topAlignmentY = (initialTop / (screenHeight / 2.0)) - 1.0;
 
-    // 3. 宽度与高度 Cover 缩放逻辑
-    // 为了实现“铺满上半部空间”，targetScale 应取 (宽/宽) 与 (上半部高/当前高) 的最大值
+    // 3. 变换参数计算
+    // 最终位移：为了抵消初始居中位移，需要平移 -initialTop * upProgress
+    double detailTranslateY = -initialTop * upProgress;
+    
+    // 4. BoxFit.cover 缩放因子
     double viewportW = screenWidth;
     double viewportH = screenHeight * 0.5;
     double scaleFactorW = viewportW / (mediaSize.width * containScale);
     double scaleFactorH = viewportH / (mediaSize.height * containScale);
-    
-    // 最终缩放目标：确保在 1.0 进度时刚好 Cover 住上半部视口
     double targetScale = max(scaleFactorW, scaleFactorH);
-    double currentScale = 1.0 + (targetScale - 1.0) * min(1.0, upProgress); 
+    double detailScale = 1.0 + (targetScale - 1.0) * min(1.0, upProgress);
 
-    // 4. 信息层淡入与压盖
+    // 5. 信息层参数
     double infoInitialTop = screenHeight;
     double infoTargetTop = screenHeight * 0.5;
-    double infoTop =
-        infoInitialTop - (infoInitialTop - infoTargetTop) * upProgress;
+    double infoTop = infoInitialTop - (infoInitialTop - infoTargetTop) * upProgress;
     double infoOpacity = pow(min(1.0, upProgress), 2.0).toDouble();
 
     return GestureDetector(
@@ -196,37 +194,28 @@ class _YuniMediaGestureHandlerState extends State<YuniMediaGestureHandler>
             color: Colors.black.withValues(alpha: widget.controller.opacity),
           ),
 
-          // 层级 2: 图片层
-          if (_rawDy <= 0)
-            Positioned(
-              top: currentTranslateY,
-              left: 0,
-              right: 0,
-              height: renderHeightAtContain,
-              child: Transform.scale(
-                scale: currentScale,
-                alignment: Alignment.topCenter,
-                child: Center(
-                  child: SizedBox(
-                    width: mediaSize.width * containScale,
-                    height: mediaSize.height * containScale,
-                    child: widget.child,
+          // 层级 2: 图片层 (全屏驱动型容器)
+          Positioned.fill(
+            child: _rawDy < 0
+                ? Transform.translate(
+                    offset: Offset(0, detailTranslateY),
+                    child: Transform.scale(
+                      scale: detailScale,
+                      alignment: Alignment(0, topAlignmentY),
+                      child: widget.child,
+                    ),
+                  )
+                : Transform.translate(
+                    offset: Offset(0, uiOffset),
+                    child: Transform.scale(
+                      scale: (1.0 - (downProgress * 0.25)).clamp(0.75, 1.0),
+                      child: Opacity(
+                        opacity: widget.controller.opacity,
+                        child: widget.child,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            )
-          else
-            // 下滑关闭时的整体位移 (Rubber Banding)
-            Transform.translate(
-              offset: Offset(0, uiOffset),
-              child: Transform.scale(
-                scale: (1.0 - (downProgress * 0.25)).clamp(0.75, 1.0),
-                child: Opacity(
-                  opacity: widget.controller.opacity,
-                  child: widget.child,
-                ),
-              ),
-            ),
+          ),
 
           // 层级 3: 详情层（压盖在图片之上）
           if (widget.infoLayer != null && _rawDy < 0)
