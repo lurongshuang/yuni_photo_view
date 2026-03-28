@@ -11,6 +11,9 @@ class YuniMediaGestureHandler extends StatefulWidget {
   final Widget? infoLayer;
   final YuniMediaViewerController controller;
   final VoidCallback onDismiss;
+  final double infoShowDamping;
+  final double infoHideDamping;
+  final double dismissDamping;
 
   const YuniMediaGestureHandler({
     super.key,
@@ -18,6 +21,9 @@ class YuniMediaGestureHandler extends StatefulWidget {
     required this.controller,
     required this.onDismiss,
     this.infoLayer,
+    this.infoShowDamping = 0.2,
+    this.infoHideDamping = 0.5,
+    this.dismissDamping = 1.0,
   });
 
   @override
@@ -48,51 +54,84 @@ class _YuniMediaGestureHandlerState extends State<YuniMediaGestureHandler>
 
   void _onVerticalDragUpdate(DragUpdateDetails details) {
     if (widget.controller.isSnappedToDetails) {
-      // 关键修复：如果在吸附态下下拉 (delta.dy > 0)，则强制解除吸附，
-      // 并让 _rawDy 从最大阻尼负值开始向 0 偏移，从而实现“下拉回弹”。
       if (details.delta.dy > 0) {
+        // 在详情态下拉：解除吸附
         widget.controller.setIsSnappedToDetails(false);
-        // 此处不 return，继续执行下面的 _rawDy 累加
       } else {
-        return; // 上滑依然交给内部 ScrollView
+        // 在详情态依然往上拉：锁定不处理（或由长信息滚动接管）
+        return;
+      }
+    }
+
+    double delta = details.delta.dy;
+    double damping;
+
+    if (delta < 0) {
+      // 1. 任何时候的上拉（显示或者推进详情）
+      damping = widget.infoShowDamping;
+    } else {
+      // 2. 下拉逻辑
+      if (_rawDy < 0) {
+        // 从详情/中间态下拉收回
+        damping = widget.infoHideDamping;
+      } else {
+        // 从中心态下拉关闭页面
+        damping = widget.dismissDamping;
       }
     }
 
     setState(() {
-      _rawDy += details.delta.dy;
-      // 限制 _rawDy，防止在吸附态下拉时瞬间跳变，给一个平滑感
+      _rawDy += delta * damping;
       _updateControllerProgress();
     });
   }
 
   void _onVerticalDragEnd(DragEndDetails details) {
-    // 即使被 snapped 也要判断，但逻辑上我们已经在 Update 里解除 snapped 了
-    if (widget.controller.isSnappedToDetails) return;
-
     final screenHeight = MediaQuery.of(context).size.height;
     final velocity = details.velocity.pixelsPerSecond.dy;
 
-    // 0.2 阻尼下的最大行程
-    double damping = 0.2;
-    double maxRawDy = -screenHeight * 0.5 / damping;
+    // 获取图片 Contain 态下的初始偏移，作为吸附的目标值
+    final mediaSize = widget.controller.currentMediaSize ??
+        Size(MediaQuery.of(context).size.width, screenHeight);
+    double containScale =
+        min(MediaQuery.of(context).size.width / mediaSize.width, screenHeight / mediaSize.height);
+    double renderHeightAtContain = mediaSize.height * containScale;
+    double initialTop = (screenHeight - renderHeightAtContain) / 2.0;
+
+    // 现在 _rawDy 直观代表 UI 偏移量，目标吸附点是 -initialTop (抵顶)
+    double targetDy = -initialTop;
+
+    // 彻底解耦：使用绝对物理距离作为触发阈值（100px）
+    const double triggerDist = 100.0;
 
     if (_rawDy < 0) {
-      // 上滑进度: 0.0 (全屏) -> 1.0 (详情)
-      double upProgress = (_rawDy / maxRawDy).clamp(0.0, 1.0);
-
-      // 关键修复：如果在详情态/半路位置快速向下划 (velocity > 800)，触发回弹至全屏
-      if (velocity > 800) {
+      // 1. 速度判定 (Flick)：
+      if (velocity < -800) {
+        // 快速上滑，进入详情
+        _snapTo(targetDy, true);
+      } else if (velocity > 800) {
+        // 快速下滑，收回全屏
         _snapTo(0, false);
-      }
-      // 优化判定：超过 80% 进程，或极快地 flick 上滑才吸附
-      else if (velocity < -1200 || upProgress > 0.8) {
-        _snapTo(maxRawDy, true);
       } else {
-        _snapTo(0, false);
+        // 2. 静态位置判定（基于绝对行程）：
+        if (_rawDy < targetDy + triggerDist) {
+          // 当前位置已经非常接近详情态（或者行程本身就没超过阈值），则吸附进入详情
+          _snapTo(targetDy, true);
+        } else if (_rawDy > -triggerDist) {
+          // 当前位置已经回退到非常接近全屏态，则收回全屏
+          _snapTo(0, false);
+        } else {
+          // 3. 兜底逻辑：在长行程的中间地带，按中点划分归属
+          if (_rawDy < targetDy / 2.0) {
+            _snapTo(targetDy, true);
+          } else {
+            _snapTo(0, false);
+          }
+        }
       }
     } else {
-      // 下滑关闭判定
-      if (velocity > 800 || _rawDy > 150) {
+      // 下拉关闭判定
+      if (velocity > 1200 || _rawDy > 150) {
         widget.onDismiss();
       } else {
         _snapTo(0, false);
@@ -101,33 +140,37 @@ class _YuniMediaGestureHandlerState extends State<YuniMediaGestureHandler>
   }
 
   void _snapTo(double target, bool isSnapped) {
-    _dyAnimation = _animController.drive(
-      Tween<double>(
-        begin: _rawDy,
-        end: target,
-      ).chain(CurveTween(curve: Curves.easeOutQuart)),
+    _animController.stop();
+    _dyAnimation = Tween<double>(begin: _rawDy, end: target).animate(
+      CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
     );
-    _animController.reset();
-    _animController.forward().then((_) {
-      if (mounted) {
-        widget.controller.setIsSnappedToDetails(isSnapped);
-      }
-    });
     _dyAnimation.addListener(() {
       setState(() {
         _rawDy = _dyAnimation.value;
         _updateControllerProgress();
       });
     });
+    _animController.forward(from: 0.0).then((_) {
+      if (mounted) {
+        widget.controller.setIsSnappedToDetails(isSnapped);
+      }
+    });
   }
 
   void _updateControllerProgress() {
     final screenHeight = MediaQuery.of(context).size.height;
-    double damping = 0.2;
-    double maxRawDy = -screenHeight * 0.5 / damping;
+    
+    // 获取抵顶所需的总位移
+    final mediaSize = widget.controller.currentMediaSize ??
+        Size(MediaQuery.of(context).size.width, screenHeight);
+    double containScale =
+        min(MediaQuery.of(context).size.width / mediaSize.width, screenHeight / mediaSize.height);
+    double renderHeightAtContain = mediaSize.height * containScale;
+    double initialTop = (screenHeight - renderHeightAtContain) / 2.0;
 
     if (_rawDy < 0) {
-      double progress = (_rawDy / maxRawDy).clamp(0.0, 2.0); // 允许略微超过 1.0 以支持压盖
+      // 这里的 progress 计算以 initialTop 为 1.0 进度
+      double progress = (_rawDy / -initialTop).clamp(0.0, 2.0); 
       widget.controller.setInfoProgress(progress);
       widget.controller.updateOpacity(1.0);
     } else {
@@ -139,36 +182,26 @@ class _YuniMediaGestureHandlerState extends State<YuniMediaGestureHandler>
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+
     final mediaSize =
         widget.controller.currentMediaSize ?? Size(screenWidth, screenHeight);
-
-    // --- 物理插值计算 ---
-    double damping = 0.2;
-    double uiOffset = _rawDy < 0 ? _rawDy * damping : _rawDy; 
-    
-    // 上滑进度: [_maxRawDy, 0] -> [1.0, 0.0]
-    double maxRawDy = -screenHeight * 0.5 / damping;
-    double upProgress = (_rawDy / maxRawDy).clamp(0.0, 2.0);
-    
-    // 下滑进度: [0, screenHeight/2] -> [0.0, 1.0]
-    double downProgress = (_rawDy / (screenHeight / 2)).clamp(0.0, 1.0);
 
     // 1. 计算初始与目标状态
     double containScale = min(screenWidth / mediaSize.width, screenHeight / mediaSize.height);
     double renderHeightAtContain = mediaSize.height * containScale;
     double initialTop = (screenHeight - renderHeightAtContain) / 2.0;
 
-    // 2. 关键：计算图片顶部在全屏坐标系中的相对 Alignment
-    // (-1.0 为顶部, 0.0 为中心, 1.0 为底部)
+    // 2. 变换参数计算
+    // 在增量模式下，_rawDy 直接就是 UI 位移
+    double upProgress = (_rawDy / -initialTop).clamp(0.0, 2.0);
+    double downProgress = (_rawDy / (screenHeight * 0.5)).clamp(0.0, 1.0);
+
+    // 关键：计算图片顶部在全屏坐标系中的相对 Alignment
     double topAlignmentY = (initialTop / (screenHeight / 2.0)) - 1.0;
 
-    // 3. 变换参数计算
-    // 最终位移：为了抵消初始居中位移，需要平移 -initialTop * upProgress
-    double detailTranslateY = -initialTop * upProgress;
-    
-    // 4. BoxFit.cover 缩放因子
+    // BoxFit.cover 缩放因子
     double viewportW = screenWidth;
     double viewportH = screenHeight * 0.5;
     double scaleFactorW = viewportW / (mediaSize.width * containScale);
@@ -176,7 +209,7 @@ class _YuniMediaGestureHandlerState extends State<YuniMediaGestureHandler>
     double targetScale = max(scaleFactorW, scaleFactorH);
     double detailScale = 1.0 + (targetScale - 1.0) * min(1.0, upProgress);
 
-    // 5. 信息层参数
+    // 3. 信息层参数
     double infoInitialTop = screenHeight;
     double infoTargetTop = screenHeight * 0.5;
     double infoTop = infoInitialTop - (infoInitialTop - infoTargetTop) * upProgress;
@@ -196,25 +229,19 @@ class _YuniMediaGestureHandlerState extends State<YuniMediaGestureHandler>
 
           // 层级 2: 图片层 (全屏驱动型容器)
           Positioned.fill(
-            child: _rawDy < 0
-                ? Transform.translate(
-                    offset: Offset(0, detailTranslateY),
-                    child: Transform.scale(
-                      scale: detailScale,
-                      alignment: Alignment(0, topAlignmentY),
-                      child: widget.child,
-                    ),
-                  )
-                : Transform.translate(
-                    offset: Offset(0, uiOffset),
-                    child: Transform.scale(
-                      scale: (1.0 - (downProgress * 0.25)).clamp(0.75, 1.0),
-                      child: Opacity(
-                        opacity: widget.controller.opacity,
-                        child: widget.child,
-                      ),
-                    ),
-                  ),
+            child: Transform.translate(
+              offset: Offset(0, _rawDy),
+              child: Transform.scale(
+                scale: _rawDy < 0
+                    ? detailScale
+                    : (1.0 - (downProgress * 0.25)).clamp(0.75, 1.0),
+                alignment: _rawDy < 0 ? Alignment(0, topAlignmentY) : Alignment.center,
+                child: Opacity(
+                  opacity: _rawDy < 0 ? 1.0 : widget.controller.opacity,
+                  child: widget.child,
+                ),
+              ),
+            ),
           ),
 
           // 层级 3: 详情层（压盖在图片之上）

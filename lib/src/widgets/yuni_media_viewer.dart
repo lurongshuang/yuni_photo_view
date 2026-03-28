@@ -28,6 +28,9 @@ class YuniMediaViewer extends StatefulWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final String heroTagPrefix;
+  final double infoShowDamping;
+  final double infoHideDamping;
+  final double dismissDamping;
 
   const YuniMediaViewer({
     super.key,
@@ -41,6 +44,9 @@ class YuniMediaViewer extends StatefulWidget {
     this.onTap,
     this.onLongPress,
     this.heroTagPrefix = '',
+    this.infoShowDamping = 0.2,
+    this.infoHideDamping = 0.5,
+    this.dismissDamping = 1.0,
   });
 
   static Future<void> show(
@@ -55,6 +61,9 @@ class YuniMediaViewer extends StatefulWidget {
     VoidCallback? onTap,
     VoidCallback? onLongPress,
     String heroTagPrefix = '',
+    double infoShowDamping = 0.2,
+    double infoHideDamping = 0.5,
+    double dismissDamping = 1.0,
   }) {
     return Navigator.of(context).push(
       PageRouteBuilder(
@@ -74,6 +83,9 @@ class YuniMediaViewer extends StatefulWidget {
               onTap: onTap,
               onLongPress: onLongPress,
               heroTagPrefix: heroTagPrefix,
+              infoShowDamping: infoShowDamping,
+              infoHideDamping: infoHideDamping,
+              dismissDamping: dismissDamping,
             ),
           );
         },
@@ -160,6 +172,9 @@ class _YuniMediaViewerState extends State<YuniMediaViewer> {
                 YuniMediaGestureHandler(
                   controller: widget.controller,
                   onDismiss: () => Navigator.of(context).pop(),
+                  infoShowDamping: widget.infoShowDamping,
+                  infoHideDamping: widget.infoHideDamping,
+                  dismissDamping: widget.dismissDamping,
                   // 详情层包装在 ScrollView 中以支持长信息
                   infoLayer: _buildScrollableInfoLayer(screenHeight),
                   child: GestureDetector(

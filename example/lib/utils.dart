@@ -50,13 +50,16 @@ Widget buildGrid(BuildContext context, List<YuniMediaItem> items, String prefix,
   );
 }
 
-void openViewer(BuildContext context, List<YuniMediaItem> items, int index, String prefix, {bool minimal = false}) {
+void openViewer(BuildContext context, List<YuniMediaItem> items, int index, String prefix, {bool minimal = false, double infoShowDamping = 0.2, double infoHideDamping = 0.5, double dismissDamping = 1.0}) {
   final controller = YuniMediaViewerController(initialIndex: index);
   YuniMediaViewer.show(
     context,
     items: items,
     controller: controller,
     heroTagPrefix: prefix,
+    infoShowDamping: infoShowDamping,
+    infoHideDamping: infoHideDamping,
+    dismissDamping: dismissDamping,
     contentBuilder: (context, item) {
       if (item.mediaType == YuniMediaType.video) {
         return Container(

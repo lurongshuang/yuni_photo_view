@@ -3,6 +3,7 @@ import 'cases/standard.dart';
 import 'cases/video.dart';
 import 'cases/minimal.dart';
 import 'cases/custom_info.dart';
+import 'cases/damping_test.dart';
 
 void main() {
   runApp(const MaterialApp(home: HomePage()));
@@ -41,6 +42,12 @@ class HomePage extends StatelessWidget {
             '自定义深色详情页',
             '演示不同风格的 Info Layer 布局',
             () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CustomInfoGallery())),
+          ),
+          _buildTestTile(
+            context,
+            '阻尼手感自定义测试',
+            '实时调节并体验上滑/下滑的不同物理阻尼 (upDamping, downDamping)',
+            () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DampingTestGallery())),
           ),
         ],
       ),
