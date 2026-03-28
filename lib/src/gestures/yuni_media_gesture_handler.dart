@@ -166,9 +166,16 @@ class _YuniMediaGestureHandlerState extends State<YuniMediaGestureHandler>
     // 2. 抵顶即停逻辑
     double currentTranslateY = max(0.0, initialTop * (1.0 - upProgress));
 
-    // 3. 宽度撑满缩放逻辑
-    double targetScale = screenWidth / (mediaSize.width * containScale);
-    double currentScale = 1.0 + (targetScale - 1.0) * min(1.0, upProgress);
+    // 3. 宽度与高度 Cover 缩放逻辑
+    // 为了实现“铺满上半部空间”，targetScale 应取 (宽/宽) 与 (上半部高/当前高) 的最大值
+    double viewportW = screenWidth;
+    double viewportH = screenHeight * 0.5;
+    double scaleFactorW = viewportW / (mediaSize.width * containScale);
+    double scaleFactorH = viewportH / (mediaSize.height * containScale);
+    
+    // 最终缩放目标：确保在 1.0 进度时刚好 Cover 住上半部视口
+    double targetScale = max(scaleFactorW, scaleFactorH);
+    double currentScale = 1.0 + (targetScale - 1.0) * min(1.0, upProgress); 
 
     // 4. 信息层淡入与压盖
     double infoInitialTop = screenHeight;
