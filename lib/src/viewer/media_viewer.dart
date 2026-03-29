@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:photo_view/photo_view.dart';
 
 import '../core/interaction_config.dart';
 import '../core/viewer_controller.dart';
@@ -53,6 +55,7 @@ class MediaViewer extends StatefulWidget {
     this.onPageChanged,
     this.onInfoStateChanged,
     this.onDismiss,
+    this.onBarsVisibilityChanged,
   });
 
   /// The ordered list of items to display.
@@ -93,6 +96,10 @@ class MediaViewer extends StatefulWidget {
   /// Called when the viewer is about to be dismissed by gesture.
   final VoidCallback? onDismiss;
 
+  /// Called whenever the bars visibility toggles (single-tap fullscreen).
+  /// [true] = bars are now visible; [false] = bars are now hidden.
+  final ValueChanged<bool>? onBarsVisibilityChanged;
+
   /// Push the viewer as a full-screen route.
   static Future<T?> open<T>(
     BuildContext context, {
@@ -109,9 +116,8 @@ class MediaViewer extends StatefulWidget {
     ValueChanged<int>? onPageChanged,
     ValueChanged<InfoState>? onInfoStateChanged,
     VoidCallback? onDismiss,
+    ValueChanged<bool>? onBarsVisibilityChanged,
   }) {
-    // Import ViewerRoute via relative path resolved at call-site.
-    // Use a transparent ModalRoute so the previous page is visible during dismiss.
     return Navigator.of(context).push<T>(
       _ViewerPageRoute<T>(
         builder: (_) => MediaViewer(
@@ -128,6 +134,7 @@ class MediaViewer extends StatefulWidget {
           onPageChanged: onPageChanged,
           onInfoStateChanged: onInfoStateChanged,
           onDismiss: onDismiss,
+          onBarsVisibilityChanged: onBarsVisibilityChanged,
         ),
       ),
     );
@@ -155,6 +162,9 @@ class _MediaViewerState extends State<MediaViewer>
   late AnimationController _dismissSnapController;
   final ValueNotifier<double> _dismissOffset = ValueNotifier(0);
   double _dismissSnapFrom = 0;
+
+  // Bars visibility (toggled by single tap on content)
+  bool _barsVisible = true;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -197,6 +207,11 @@ class _MediaViewerState extends State<MediaViewer>
 
   @override
   void dispose() {
+    // Always restore system UI when the viewer closes, regardless of which
+    // mode we left it in.
+    if (widget.config.enableSystemUiToggle) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
     _pageCtrlAt(_currentIndex).removeListener(_onCurrentPageZoomChanged);
     for (final c in _infoControllers.values) {
       c.dispose();
@@ -211,6 +226,8 @@ class _MediaViewerState extends State<MediaViewer>
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+
+  ViewerInteractionConfig get _cfg => widget.config;
 
   int get _itemCount => widget.items.length;
 
@@ -297,6 +314,22 @@ class _MediaViewerState extends State<MediaViewer>
     return (offset / range).clamp(0.0, 1.0);
   }
 
+  // ── Bars toggle (single-tap fullscreen) ──────────────────────────────────
+
+  void _toggleBars() {
+    setState(() => _barsVisible = !_barsVisible);
+    widget.onBarsVisibilityChanged?.call(_barsVisible);
+    if (_cfg.enableSystemUiToggle) {
+      if (_barsVisible) {
+        // Restore system bars (status bar + nav bar).
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      } else {
+        // Hide system bars; they reappear briefly on edge-swipe then auto-hide.
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      }
+    }
+  }
+
   // ── Bar context builder ───────────────────────────────────────────────────
 
   ViewerBarContext _barCtx(double dismissProgress) => ViewerBarContext(
@@ -305,6 +338,8 @@ class _MediaViewerState extends State<MediaViewer>
         infoState: _currentInfoCtrl.state,
         dismissProgress: dismissProgress,
         config: widget.config,
+        barsVisible: _barsVisible,
+        infoRevealProgress: _currentInfoCtrl.revealProgress,
       );
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -313,9 +348,15 @@ class _MediaViewerState extends State<MediaViewer>
   Widget build(BuildContext context) {
     final screenH = MediaQuery.of(context).size.height;
 
-    return ValueListenableBuilder<double>(
-      valueListenable: _dismissOffset,
-      builder: (ctx, rawOffset, _) {
+    // Merge _dismissOffset and _currentInfoCtrl so that bars/overlays rebuild
+    // both when the user is dismiss-dragging AND when the info sheet is being
+    // revealed or hidden.  The merged Listenable is recreated on every build()
+    // call, which is only triggered by setState (page-change, zoom-change,
+    // bars-toggle) — not on every notification — so this is efficient.
+    return ListenableBuilder(
+      listenable: Listenable.merge([_dismissOffset, _currentInfoCtrl]),
+      builder: (ctx, _) {
+        final rawOffset = _dismissOffset.value;
         final progress = _dismissProgress(rawOffset);
         final contentDy =
             rawOffset * widget.config.viewerDismissDownDamping;
@@ -339,55 +380,87 @@ class _MediaViewerState extends State<MediaViewer>
             Positioned.fill(
               child: Transform.translate(
                 offset: Offset(0, contentDy),
-                child: PageView.builder(
-                  controller: _pageController,
-                  // Disable paging while zoomed so InteractiveViewer can pan.
-                  physics: _pageCtrlAt(_currentIndex).isZoomed
-                      ? const NeverScrollableScrollPhysics()
-                      : (widget.config.enableHorizontalPaging
-                          ? const BouncingScrollPhysics()
-                          : const NeverScrollableScrollPhysics()),
-                  onPageChanged: _onPageChanged,
-                  itemCount: _itemCount,
-                  itemBuilder: (_, i) => ViewerPageShell(
-                    key: ValueKey('page_$i'),
-                    index: i,
-                    item: _itemAt(i),
-                    infoController: _infoCtrlAt(i),
-                    pageController: _pageCtrlAt(i),
-                    config: widget.config,
-                    theme: widget.theme,
-                    pageBuilder: widget.pageBuilder,
-                    infoBuilder: widget.infoBuilder,
-                    screenHeight: screenH,
-                    onDismissUpdate: _onDismissUpdate,
-                    onDismissEnd: _onDismissEnd,
+                // PhotoViewGestureDetectorScope ensures that two-finger pinch
+                // gestures are always claimed before the horizontal PageView
+                // scroll recognizer can intercept them.  Works in tandem with
+                // PhotoView.customChild inside each ViewerPageShell.
+                child: PhotoViewGestureDetectorScope(
+                  axis: Axis.horizontal,
+                  child: PageView.builder(
+                    controller: _pageController,
+                    // Disable horizontal paging while zoomed so that a single-
+                    // finger pan in the zoomed PhotoView wins over the PageView
+                    // drag recogniser.
+                    physics: _pageCtrlAt(_currentIndex).isZoomed
+                        ? const NeverScrollableScrollPhysics()
+                        : (widget.config.enableHorizontalPaging
+                            ? const BouncingScrollPhysics()
+                            : const NeverScrollableScrollPhysics()),
+                    onPageChanged: _onPageChanged,
+                    itemCount: _itemCount,
+                    itemBuilder: (_, i) => ViewerPageShell(
+                      key: ValueKey('page_$i'),
+                      index: i,
+                      item: _itemAt(i),
+                      infoController: _infoCtrlAt(i),
+                      pageController: _pageCtrlAt(i),
+                      config: widget.config,
+                      theme: widget.theme,
+                      pageBuilder: widget.pageBuilder,
+                      infoBuilder: widget.infoBuilder,
+                      screenHeight: screenH,
+                      onDismissUpdate: _onDismissUpdate,
+                      onDismissEnd: _onDismissEnd,
+                      onContentTap: _cfg.enableTapToToggleBars
+                          ? _toggleBars
+                          : null,
+                    ),
                   ),
                 ),
               ),
             ),
 
-            // ── Top bar (fixed, alpha only) ────────────────────────────────
+            // ── Top bar (fixed position) ───────────────────────────────────
+            // Two-layer opacity:
+            //   outer Opacity  → dismiss-progress fade (immediate, finger-driven)
+            //   inner AnimatedOpacity → tap-toggle fade (smooth 220 ms animation)
+            // IgnorePointer prevents hidden bars from absorbing taps.
             if (widget.topBarBuilder != null)
               Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
-                child: Opacity(
-                  opacity: barAlpha,
-                  child: widget.topBarBuilder!(ctx, _barCtx(progress)),
+                child: IgnorePointer(
+                  ignoring: !_barsVisible,
+                  child: Opacity(
+                    opacity: barAlpha,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeInOut,
+                      opacity: _barsVisible ? 1.0 : 0.0,
+                      child: widget.topBarBuilder!(ctx, _barCtx(progress)),
+                    ),
+                  ),
                 ),
               ),
 
-            // ── Bottom bar (fixed, alpha only) ────────────────────────────
+            // ── Bottom bar (fixed position) ────────────────────────────────
             if (widget.bottomBarBuilder != null)
               Positioned(
                 bottom: 0,
                 left: 0,
                 right: 0,
-                child: Opacity(
-                  opacity: barAlpha,
-                  child: widget.bottomBarBuilder!(ctx, _barCtx(progress)),
+                child: IgnorePointer(
+                  ignoring: !_barsVisible,
+                  child: Opacity(
+                    opacity: barAlpha,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeInOut,
+                      opacity: _barsVisible ? 1.0 : 0.0,
+                      child: widget.bottomBarBuilder!(ctx, _barCtx(progress)),
+                    ),
+                  ),
                 ),
               ),
 

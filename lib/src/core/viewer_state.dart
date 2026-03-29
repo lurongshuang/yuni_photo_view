@@ -58,7 +58,10 @@ class ViewerPageContext {
 
 // ── Bar context ───────────────────────────────────────────────────────────────
 
-/// Context passed to [ViewerBarBuilder] (top/bottom overlays).
+/// Context passed to [ViewerBarBuilder] and [ViewerOverlayBuilder].
+///
+/// All fields update in real-time during user gestures so that custom widgets
+/// can animate smoothly without any additional state management.
 class ViewerBarContext {
   const ViewerBarContext({
     required this.index,
@@ -66,6 +69,8 @@ class ViewerBarContext {
     required this.infoState,
     required this.dismissProgress,
     required this.config,
+    required this.barsVisible,
+    required this.infoRevealProgress,
   });
 
   final int index;
@@ -74,7 +79,36 @@ class ViewerBarContext {
 
   /// How far a dismiss drag has progressed (0.0 = none, 1.0 = trigger point).
   final double dismissProgress;
+
   final ViewerInteractionConfig config;
+
+  /// Whether the top/bottom overlay bars are currently visible.
+  ///
+  /// Toggles when the user single-taps the content area
+  /// (when [ViewerInteractionConfig.enableTapToToggleBars] is true).
+  ///
+  /// **Top/bottom bar builders** receive this, but note that the framework
+  /// already wraps them in [AnimatedOpacity] — so this field is most useful
+  /// for changing *content* (icon, label) rather than managing visibility
+  /// yourself.
+  ///
+  /// **[ViewerOverlayBuilder]** is NOT wrapped by the framework, so this is
+  /// the primary way for overlays to show/hide elements in fullscreen mode
+  /// (e.g. a "tap to restore bars" hint).
+  final bool barsVisible;
+
+  /// Continuous progress of the info sheet reveal.
+  ///
+  /// - `0.0` — info sheet fully hidden.
+  /// - `1.0` — info sheet at the default extent
+  ///   ([ViewerInteractionConfig.defaultShownExtent]).
+  /// - `> 1.0` — info sheet expanded beyond the default extent.
+  ///
+  /// Updates on every animation frame while the user drags or while the
+  /// sheet animates.  Use this to cross-fade or translate overlays as the
+  /// sheet rises — for example, fading out a bottom filmstrip so it does not
+  /// overlap the info content.
+  final double infoRevealProgress;
 }
 
 // ── Per-page controller ───────────────────────────────────────────────────────

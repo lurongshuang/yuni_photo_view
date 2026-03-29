@@ -1,6 +1,5 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
+import 'package:photo_view/photo_view.dart';
 
 import '../core/interaction_config.dart';
 import '../core/viewer_item.dart';
@@ -52,6 +51,7 @@ class ViewerPageShell extends StatefulWidget {
     this.infoBuilder,
     this.onDismissUpdate,
     this.onDismissEnd,
+    this.onContentTap,
     this.screenHeight,
   });
 
@@ -67,6 +67,11 @@ class ViewerPageShell extends StatefulWidget {
 
   final DismissUpdateCallback? onDismissUpdate;
   final DismissEndCallback? onDismissEnd;
+
+  /// Called on a single tap on the content area (not info sheet).
+  /// Used by [MediaViewer] to toggle the top/bottom bar visibility.
+  /// When null, single taps are not consumed by the shell.
+  final VoidCallback? onContentTap;
 
   /// Pre-supplied screen height to avoid MediaQuery look-ups in tight loops.
   final double? screenHeight;
@@ -187,9 +192,13 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       builder: (ctx, _) {
         final isZoomed = widget.pageController.isZoomed;
         // When content is zoomed, null out the drag callbacks so that the
-        // GestureDetector does not register a VerticalDragRecognizer.
-        // This lets InteractiveViewer's ScaleGestureRecognizer win the arena
-        // and handle single-finger pan on the zoomed content.
+        // GestureDetector does not register a VerticalDragRecognizer and lets
+        // PhotoView's ScaleGestureRecognizer handle single-finger pan.
+        //
+        // Single-tap bar toggle is intentionally NOT placed here — see
+        // _ZoomableMediaWrapper.onSingleTap. Relying on PhotoView's own
+        // TapGestureRecognizer (via onTapUp) avoids the gesture-arena conflict
+        // that prevented onTap from ever firing in this outer GestureDetector.
         return GestureDetector(
           behavior: HitTestBehavior.translucent,
           onVerticalDragStart: isZoomed ? null : (d) => _onDragStart(d, screenH),
@@ -237,6 +246,11 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
               enabled: _cfg.enableZoom && revealProgress < 0.05,
               enableDoubleTap: _cfg.enableDoubleTapZoom,
               pageController: widget.pageController,
+              // Single-tap is detected via PhotoView's internal TapGestureRecognizer
+              // (onTapUp), which naturally defers to DoubleTapGestureRecognizer
+              // when a double-tap occurs. This avoids the gesture-arena conflict
+              // that existed when we used an outer GestureDetector(onTap).
+              onSingleTap: _cfg.enableTapToToggleBars ? widget.onContentTap : null,
               child: widget.pageBuilder(ctx, pageCtx),
             ),
           ),
@@ -304,14 +318,16 @@ class _MediaViewportWrapper extends StatelessWidget {
 
 // ── Zoomable media wrapper ────────────────────────────────────────────────────
 
-/// Wraps business content in an [InteractiveViewer] to provide pinch-to-zoom
-/// and double-tap zoom/restore, when enabled by [ViewerInteractionConfig].
+/// Wraps business content in a [PhotoView.customChild] to provide
+/// pinch-to-zoom, double-tap zoom/restore, and bounded panning.
 ///
-/// When [enabled] is false (e.g. while info panel is open), gestures are
-/// passed through to the underlying content.
+/// Using [PhotoView.customChild] instead of [InteractiveViewer] ensures that
+/// the gesture recognizer participates in the [PhotoViewGestureDetectorScope]
+/// that wraps the [PageView] in [MediaViewer], completely eliminating the
+/// conflict between horizontal page-swiping and two-finger pinch-to-zoom.
 ///
 /// Zoom state is reported back to [ViewerPageController] so the parent shell
-/// can block dismiss gestures while content is zoomed.
+/// can block dismiss gestures and disable PageView paging while zoomed.
 class _ZoomableMediaWrapper extends StatefulWidget {
   const _ZoomableMediaWrapper({
     super.key,
@@ -319,6 +335,7 @@ class _ZoomableMediaWrapper extends StatefulWidget {
     required this.enabled,
     required this.enableDoubleTap,
     required this.pageController,
+    this.onSingleTap,
   });
 
   final Widget child;
@@ -326,17 +343,31 @@ class _ZoomableMediaWrapper extends StatefulWidget {
   final bool enableDoubleTap;
   final ViewerPageController pageController;
 
+  /// Called when a confirmed single tap on the content area is detected.
+  ///
+  /// PhotoView's internal [TapGestureRecognizer] and [DoubleTapGestureRecognizer]
+  /// already coordinate correctly: [onSingleTap] fires only for genuine single
+  /// taps, never for the first tap of a double-tap sequence.
+  final VoidCallback? onSingleTap;
+
   @override
   State<_ZoomableMediaWrapper> createState() => _ZoomableMediaWrapperState();
 }
 
 class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     with SingleTickerProviderStateMixin {
-  late final TransformationController _transformCtrl;
+  late final PhotoViewController _photoCtrl;
+  late final PhotoViewScaleStateController _scaleStateCtrl;
   late final AnimationController _animCtrl;
-  Animation<Matrix4>? _animation;
 
-  Offset _doubleTapPosition = Offset.zero;
+  // Used to animate double-tap zoom/restore via the PhotoViewController.
+  Animation<double>? _scaleAnim;
+  Animation<Offset>? _positionAnim;
+
+  // Tap position captured via PhotoView's own onTapDown; updated on every
+  // pointer-down so the last value is the second-tap position when
+  // scaleStateCycle fires.
+  Offset _lastTapPosition = Offset.zero;
 
   static const double _kMinScale = 1.0;
   static const double _kMaxScale = 5.0;
@@ -345,98 +376,155 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
   @override
   void initState() {
     super.initState();
-    _transformCtrl = TransformationController();
+    _photoCtrl = PhotoViewController()
+      ..outputStateStream.listen(_onPhotoViewState);
+    _scaleStateCtrl = PhotoViewScaleStateController();
     _animCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 250),
-    )..addListener(() {
-        if (_animation != null) {
-          _transformCtrl.value = _animation!.value;
-          _reportScale();
-        }
-      });
+    )..addListener(_onAnimTick);
+    debugPrint('[Viewer][Zoom] initState enableDoubleTap=${widget.enableDoubleTap}');
   }
 
   @override
   void didUpdateWidget(_ZoomableMediaWrapper old) {
     super.didUpdateWidget(old);
-    // When zoom transitions from enabled → disabled (info starting to show),
-    // instantly reset to 1× so that if InteractiveViewer re-enters the tree
-    // (enabled flips back to true) it doesn't carry a stale 2× transform.
+    // When zoom is disabled (info panel opening), snap back to 1× immediately.
     if (old.enabled && !widget.enabled && _isZoomed) {
+      debugPrint('[Viewer][Zoom] disabled while zoomed — snap to 1×');
       _animCtrl.stop();
-      _transformCtrl.value = Matrix4.identity();
-      _reportScale();
+      _photoCtrl.updateMultiple(scale: _kMinScale, position: Offset.zero);
+      _scaleStateCtrl.scaleState = PhotoViewScaleState.initial;
+      widget.pageController.reportContentScale(_kMinScale);
     }
   }
 
   @override
   void dispose() {
-    _transformCtrl.dispose();
+    _animCtrl.removeListener(_onAnimTick);
+    _photoCtrl.dispose();
+    _scaleStateCtrl.dispose();
     _animCtrl.dispose();
     super.dispose();
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  double get _currentScale => _transformCtrl.value.getMaxScaleOnAxis();
+  bool get _isZoomed => (_photoCtrl.scale ?? _kMinScale) > 1.02;
 
-  bool get _isZoomed => _currentScale > 1.02;
-
-  void _reportScale() {
-    widget.pageController.reportContentScale(_currentScale);
+  void _onPhotoViewState(PhotoViewControllerValue value) {
+    final s = value.scale ?? _kMinScale;
+    widget.pageController.reportContentScale(s);
   }
 
-  void _animateTo(Matrix4 target) {
+  void _onAnimTick() {
+    if (_scaleAnim != null && _positionAnim != null) {
+      _photoCtrl.updateMultiple(
+        scale: _scaleAnim!.value,
+        position: _positionAnim!.value,
+      );
+    }
+  }
+
+  // ── Double-tap (driven via PhotoView's own scaleStateCycle) ───────────────
+  //
+  // We do NOT wrap PhotoView.customChild in an outer GestureDetector(onDoubleTap)
+  // because PhotoView always registers its own DoubleTapGestureRecognizer
+  // internally (handleDoubleTap is always non-null).  The inner recogniser wins
+  // the gesture arena every time, so an outer one is never called.
+  //
+  // Instead we hook into PhotoView's native mechanism:
+  //   • onTapDown  → captures the latest tap position (updated on every down,
+  //                  so the value at scaleStateCycle call-time is the second
+  //                  tap's position — exactly what we want for zoom centering).
+  //   • scaleStateCycle → intercepts the double-tap event and triggers our
+  //                  custom animation; returns the SAME state so PhotoView
+  //                  itself does not animate anything.
+
+  void _onPhotoViewTapDown(
+    BuildContext _,
+    TapDownDetails details,
+    PhotoViewControllerValue __,
+  ) {
+    _lastTapPosition = details.localPosition;
+    debugPrint('[Viewer][Zoom] ✅ onTapDown at $_lastTapPosition');
+  }
+
+  /// Called by PhotoView's internal [TapGestureRecognizer] only for confirmed
+  /// single taps — never fires when a double-tap is detected (the arena is won
+  /// by [DoubleTapGestureRecognizer] in that case, so [TapGestureRecognizer]
+  /// is rejected and [onTapUp] is not invoked).
+  void _onPhotoViewTapUp(
+    BuildContext _,
+    TapUpDetails details,
+    PhotoViewControllerValue __,
+  ) {
+    debugPrint('[Viewer][Zoom] ✅ onTapUp → single tap confirmed → calling onSingleTap');
+    widget.onSingleTap?.call();
+  }
+
+  /// Called by PhotoView on every double-tap (scaleStateCycle hook).
+  /// Drives our custom zoom animation and returns the SAME state so
+  /// PhotoView does not independently change its own transform.
+  PhotoViewScaleState _handleDoubleTap(PhotoViewScaleState currentState) {
+    debugPrint(
+        '[Viewer][Zoom] ✅ _handleDoubleTap called currentState=$currentState isZoomed=$_isZoomed');
+
+    if (!widget.enableDoubleTap) {
+      debugPrint('[Viewer][Zoom] double-tap disabled — ignoring');
+      return currentState; // no-op
+    }
+
+    _runDoubleTapAnimation();
+    // Return current state so PhotoView does NOT independently animate.
+    return currentState;
+  }
+
+  void _runDoubleTapAnimation() {
     _animCtrl.stop();
-    _animation = Matrix4Tween(
-      begin: _transformCtrl.value,
-      end: target,
-    ).animate(
-      CurvedAnimation(parent: _animCtrl, curve: Curves.easeInOutCubic),
-    );
-    _animCtrl.forward(from: 0);
-  }
+    final currentScale = _photoCtrl.scale ?? _kMinScale;
+    final currentPosition = _photoCtrl.position;
 
-  /// Resets to 1x with animation. Called externally (e.g. on page switch).
-  void resetZoom() {
-    if (_isZoomed) _animateTo(Matrix4.identity());
-  }
+    final double targetScale;
+    final Offset targetPosition;
 
-  // ── Double-tap ────────────────────────────────────────────────────────────
-
-  void _onDoubleTapDown(TapDownDetails details) {
-    _doubleTapPosition = details.localPosition;
-  }
-
-  void _onDoubleTap() {
     if (_isZoomed) {
-      _animateTo(Matrix4.identity());
+      targetScale = _kMinScale;
+      targetPosition = Offset.zero;
+      debugPrint('[Viewer][Zoom] double-tap → restore to 1×');
     } else {
-      // Zoom in centred on the tap position.
       const s = _kDoubleTapScale;
-      // Translate so the tapped point stays in place after scaling.
-      final dx = -_doubleTapPosition.dx * (s - 1);
-      final dy = -_doubleTapPosition.dy * (s - 1);
-      // Build the matrix: translate(dx, dy) then scale(s).
-      final zoom = Matrix4.translationValues(dx, dy, 0)
-        ..scaleByDouble(s, s, 1.0, 1.0);
-      _animateTo(zoom);
+      targetScale = s;
+      // PhotoView's effective rendering is: viewport_pos = scale * child_pos + position
+      // (the Center widget and Transform.alignment:center terms cancel each other out,
+      // leaving a simple scale-from-top-left model).
+      //
+      // To keep the tapped pixel at its original viewport position after zooming:
+      //   tap = s * tap + targetPosition  →  targetPosition = -tap * (s - 1)
+      targetPosition = Offset(
+        -_lastTapPosition.dx * (s - 1),
+        -_lastTapPosition.dy * (s - 1),
+      );
+      debugPrint(
+          '[Viewer][Zoom] double-tap → zoom ${s}x at $_lastTapPosition targetPos=$targetPosition');
     }
-  }
 
-  // ── Interaction callbacks ─────────────────────────────────────────────────
+    final curved = CurvedAnimation(
+      parent: _animCtrl,
+      curve: Curves.easeInOutCubic,
+    );
+    _scaleAnim =
+        Tween<double>(begin: currentScale, end: targetScale).animate(curved);
+    _positionAnim =
+        Tween<Offset>(begin: currentPosition, end: targetPosition).animate(curved);
 
-  void _onInteractionUpdate(ScaleUpdateDetails details) {
-    _reportScale();
-  }
+    // Keep the scale state controller in sync so PhotoView's internal state
+    // is consistent (prevents PhotoView from launching its own animation).
+    _scaleStateCtrl.scaleState = targetScale > _kMinScale
+        ? PhotoViewScaleState.zoomedIn
+        : PhotoViewScaleState.initial;
 
-  void _onInteractionEnd(ScaleEndDetails details) {
-    _reportScale();
-    // If user pinched below 1x, snap back.
-    if (_currentScale < _kMinScale) {
-      _animateTo(Matrix4.identity());
-    }
+    _animCtrl.forward(from: 0);
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -444,37 +532,30 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
   @override
   Widget build(BuildContext context) {
     if (!widget.enabled) {
-      // Zoom disabled (info open, or config flag off) — pass through content.
       return widget.child;
     }
 
-    Widget viewer = InteractiveViewer(
-      transformationController: _transformCtrl,
+    return PhotoView.customChild(
+      controller: _photoCtrl,
+      scaleStateController: _scaleStateCtrl,
+      // tightMode: child receives tight constraints = viewport size.
+      // This makes PhotoView's boundary clamping work correctly without
+      // needing to pass an explicit childSize.
+      tightMode: true,
       minScale: _kMinScale,
       maxScale: _kMaxScale,
-      // Do not clip — the outer ClipRect in _MediaViewportWrapper handles that.
-      clipBehavior: Clip.none,
-      // Allow panning beyond the viewport boundary when zoomed so the user
-      // can inspect any part of the image.
-      boundaryMargin: EdgeInsets.all(
-        math.max(MediaQuery.of(context).size.width,
-            MediaQuery.of(context).size.height),
-      ),
-      onInteractionUpdate: _onInteractionUpdate,
-      onInteractionEnd: _onInteractionEnd,
+      initialScale: _kMinScale,
+      backgroundDecoration: const BoxDecoration(color: Colors.transparent),
+      gestureDetectorBehavior: HitTestBehavior.translucent,
+      // Hook into PhotoView's own tap pipeline:
+      // onTapDown → capture tap position (for double-tap centering)
+      // onTapUp   → confirmed single tap (fires only when double-tap did NOT occur)
+      // scaleStateCycle → intercept double-tap, run our animation
+      onTapDown: _onPhotoViewTapDown,
+      onTapUp: widget.onSingleTap != null ? _onPhotoViewTapUp : null,
+      scaleStateCycle: _handleDoubleTap,
       child: widget.child,
     );
-
-    if (widget.enableDoubleTap) {
-      viewer = GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onDoubleTapDown: _onDoubleTapDown,
-        onDoubleTap: _onDoubleTap,
-        child: viewer,
-      );
-    }
-
-    return viewer;
   }
 }
 

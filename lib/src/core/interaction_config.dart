@@ -31,6 +31,8 @@ class ViewerInteractionConfig {
     this.enableInfoGesture = true,
     this.enableZoom = true,
     this.enableDoubleTapZoom = true,
+    this.enableTapToToggleBars = true,
+    this.enableSystemUiToggle = true,
   });
 
   // ── Damping ────────────────────────────────────────────────────────────────
@@ -99,6 +101,19 @@ class ViewerInteractionConfig {
   /// Hint to the business page builder that double-tap-to-zoom is appropriate.
   final bool enableDoubleTapZoom;
 
+  /// When [true], a single tap on the content area toggles the top/bottom bar
+  /// visibility (fade in / fade out).  Taps on the info sheet are not affected.
+  ///
+  /// Because the double-tap-zoom recogniser also lives in the same area, the
+  /// toggle fires ~300 ms after a single tap — this is standard behaviour in
+  /// all major photo-viewer apps (iOS Photos, Google Photos, etc.).
+  final bool enableTapToToggleBars;
+
+  /// When [true] and [enableTapToToggleBars] is also [true], the system status
+  /// bar and navigation bar are hidden together with the app bars (immersive
+  /// mode).  The system UI is restored when the viewer is dismissed.
+  final bool enableSystemUiToggle;
+
   /// Returns a copy with the given fields replaced.
   ViewerInteractionConfig copyWith({
     double? infoDragUpDamping,
@@ -118,6 +133,8 @@ class ViewerInteractionConfig {
     bool? enableInfoGesture,
     bool? enableZoom,
     bool? enableDoubleTapZoom,
+    bool? enableTapToToggleBars,
+    bool? enableSystemUiToggle,
   }) {
     return ViewerInteractionConfig(
       infoDragUpDamping: infoDragUpDamping ?? this.infoDragUpDamping,
@@ -147,6 +164,9 @@ class ViewerInteractionConfig {
       enableInfoGesture: enableInfoGesture ?? this.enableInfoGesture,
       enableZoom: enableZoom ?? this.enableZoom,
       enableDoubleTapZoom: enableDoubleTapZoom ?? this.enableDoubleTapZoom,
+      enableTapToToggleBars:
+          enableTapToToggleBars ?? this.enableTapToToggleBars,
+      enableSystemUiToggle: enableSystemUiToggle ?? this.enableSystemUiToggle,
     );
   }
 }
