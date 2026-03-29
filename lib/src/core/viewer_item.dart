@@ -1,35 +1,67 @@
-/// 查看器中的一条数据项。
+/// 查看器中的一条数据项抽象。
 ///
-/// 框架只承载业务数据，具体画面全部由 [ViewerPageBuilder] 渲染。
-class ViewerItem {
-  const ViewerItem({
+/// 框架只强依赖 [id]、[hasInfo]；其余字段由子类按需覆盖。
+///
+/// **快速接入**：使用 [DefaultViewerItem]，字段与旧版普通类一致。
+///
+/// **领域模型**：自定义 `class MyEntry extends ViewerItem`，实现 [id]、[hasInfo] 并覆盖 [payload] 等；
+/// 在 [ViewerPageBuilder] 里用类型判断即可。
+abstract class ViewerItem {
+  /// 子类构造请使用 `super()`；抽象类本身不可直接 `ViewerItem()` 实例化。
+  const ViewerItem();
+
+  /// 唯一标识（Hero、列表 key、日志等）。
+  String get id;
+
+  /// 是否支持信息面板；为 `false` 时该页隐藏面板并关闭对应手势。
+  bool get hasInfo;
+
+  /// 可选类型提示（如 `image`、`video`），框架不解析。
+  String? get kind => null;
+
+  /// 通用载荷；默认 `null`，常用 [DefaultViewerItem] 或子类覆盖。
+  Object? get payload => null;
+
+  /// 键值元数据；默认 `null`。
+  Map<String, dynamic>? get meta => null;
+
+  /// 扩展字段；默认 `null`。
+  Object? get extra => null;
+
+  @override
+  String toString() => 'ViewerItem(id: $id, kind: $kind, hasInfo: $hasInfo)';
+}
+
+/// 默认具体条目：适合 URL / meta 等通用字段的快速接入；可变副本用 [copyWith]。
+class DefaultViewerItem extends ViewerItem {
+  const DefaultViewerItem({
     required this.id,
     this.kind,
     this.payload,
     this.meta,
     this.extra,
     this.hasInfo = true,
-  });
+  }) : super();
 
-  /// 唯一标识。
+  @override
   final String id;
 
-  /// 可选类型提示（如 `image`、`video`、`file`），仅供业务使用，框架不解析。
+  @override
   final String? kind;
 
-  /// 业务自定义载荷（URL、路径、模型等）。
+  @override
   final dynamic payload;
 
-  /// 键值元数据（如 EXIF、尺寸、日期）。
+  @override
   final Map<String, dynamic>? meta;
 
-  /// 任意扩展字段，原样传给各 Builder。
+  @override
   final dynamic extra;
 
-  /// 是否支持上滑信息面板。为 `false` 时该页隐藏面板并关闭对应手势。
+  @override
   final bool hasInfo;
 
-  ViewerItem copyWith({
+  DefaultViewerItem copyWith({
     String? id,
     String? kind,
     dynamic payload,
@@ -37,7 +69,7 @@ class ViewerItem {
     dynamic extra,
     bool? hasInfo,
   }) {
-    return ViewerItem(
+    return DefaultViewerItem(
       id: id ?? this.id,
       kind: kind ?? this.kind,
       payload: payload ?? this.payload,
@@ -48,5 +80,6 @@ class ViewerItem {
   }
 
   @override
-  String toString() => 'ViewerItem(id: $id, kind: $kind, hasInfo: $hasInfo)';
+  String toString() =>
+      'DefaultViewerItem(id: $id, kind: $kind, hasInfo: $hasInfo)';
 }

@@ -4,10 +4,13 @@ import 'package:photo_view/photo_view.dart';
 
 import '../core/interaction_config.dart';
 import '../core/viewer_controller.dart';
+import '../core/viewer_desktop.dart';
+import '../core/viewer_desktop_chrome.dart';
 import '../core/viewer_item.dart';
 import '../core/viewer_state.dart';
 import '../core/viewer_theme.dart';
 import '../info_sheet/info_sheet_controller.dart';
+import '../widgets/default_viewer_desktop_chrome.dart';
 import 'viewer_page_shell.dart';
 
 // ── MediaViewer ───────────────────────────────────────────────────────────────
@@ -38,6 +41,13 @@ import 'viewer_page_shell.dart';
 /// ```dart
 /// MediaViewer.open(context, items: myItems, ...);
 /// ```
+///
+/// **桌面端**：设置 [ViewerInteractionConfig.desktopUiMode] 为 [ViewerDesktopUiMode.auto]
+///（Windows / macOS / Linux 默认）或 [ViewerDesktopUiMode.force]（如 Web 大屏）后，会显示
+/// 翻页与缩放等控件，并默认关闭横向滑动翻页、下拉关闭与信息面板上滑（可通过
+/// `desktopAllowSwipePaging` 等逐项打开）。默认顶栏可用 [desktopChromeBuilder] **整体替换**；
+/// 上下文 [ViewerDesktopChromeContext] 提供关闭、翻页、信息、缩放等全部回调。
+/// [MediaViewerController] 另提供 [MediaViewerController.zoomContentIn] 等供外部工具栏调用。
 class MediaViewer extends StatefulWidget {
   const MediaViewer({
     super.key,
@@ -56,6 +66,7 @@ class MediaViewer extends StatefulWidget {
     this.onInfoStateChanged,
     this.onDismiss,
     this.onBarsVisibilityChanged,
+    this.desktopChromeBuilder,
   });
 
   /// 要展示的数据列表。
@@ -100,6 +111,11 @@ class MediaViewer extends StatefulWidget {
   /// 顶底栏显隐切换时回调（单击内容区等）；参数为当前是否显示。
   final ValueChanged<bool>? onBarsVisibilityChanged;
 
+  /// 桌面模式（[ViewerInteractionConfig.usesDesktopUi]）下的控件区。
+  ///
+  /// 为 `null` 时使用 [DefaultViewerDesktopChrome]；返回 [SizedBox.shrink] 可完全隐藏。
+  final ViewerDesktopChromeBuilder? desktopChromeBuilder;
+
   /// 以半透明路由压入 [MediaViewer]（便于下拉透出下层、Hero 正常）。
   static Future<T?> open<T>(
     BuildContext context, {
@@ -118,6 +134,7 @@ class MediaViewer extends StatefulWidget {
     ValueChanged<InfoState>? onInfoStateChanged,
     VoidCallback? onDismiss,
     ValueChanged<bool>? onBarsVisibilityChanged,
+    ViewerDesktopChromeBuilder? desktopChromeBuilder,
   }) {
     return Navigator.of(context).push<T>(
       _ViewerPageRoute<T>(
@@ -137,6 +154,7 @@ class MediaViewer extends StatefulWidget {
           onInfoStateChanged: onInfoStateChanged,
           onDismiss: onDismiss,
           onBarsVisibilityChanged: onBarsVisibilityChanged,
+          desktopChromeBuilder: desktopChromeBuilder,
         ),
       ),
     );
@@ -185,12 +203,7 @@ class _MediaViewerState extends State<MediaViewer>
         _dismissOffset.value = _dismissSnapFrom * (1 - t);
       });
 
-    widget.controller?.attachCallbacks(
-      jumpToPage: _jumpToPage,
-      showInfo: _showCurrentInfo,
-      hideInfo: _hideCurrentInfo,
-      setBarsVisible: _setBarsVisibleFromController,
-    );
+    _attachControllerCallbacks();
 
     // 监听首页的缩放，以便切换 PageView 的 physics。
     _pageCtrlAt(_currentIndex).addListener(_onCurrentPageZoomChanged);
@@ -200,12 +213,7 @@ class _MediaViewerState extends State<MediaViewer>
   void didUpdateWidget(MediaViewer old) {
     super.didUpdateWidget(old);
     if (old.controller != widget.controller) {
-      widget.controller?.attachCallbacks(
-        jumpToPage: _jumpToPage,
-        showInfo: _showCurrentInfo,
-        hideInfo: _hideCurrentInfo,
-        setBarsVisible: _setBarsVisibleFromController,
-      );
+      _attachControllerCallbacks();
     }
   }
 
@@ -269,6 +277,18 @@ class _MediaViewerState extends State<MediaViewer>
     setState(() {}); // 刷新顶底栏上下文
   }
 
+  void _attachControllerCallbacks() {
+    widget.controller?.attachCallbacks(
+      jumpToPage: _jumpToPage,
+      showInfo: _showCurrentInfo,
+      hideInfo: _hideCurrentInfo,
+      setBarsVisible: _setBarsVisibleFromController,
+      zoomContentIn: _requestZoomInOnCurrentPage,
+      zoomContentOut: _requestZoomOutOnCurrentPage,
+      resetContentZoom: _requestZoomResetOnCurrentPage,
+    );
+  }
+
   void _jumpToPage() {
     final target = widget.controller?.pendingJumpIndex ?? 0;
     _pageController.animateToPage(
@@ -280,6 +300,79 @@ class _MediaViewerState extends State<MediaViewer>
 
   void _showCurrentInfo() => _currentInfoCtrl.show();
   void _hideCurrentInfo() => _currentInfoCtrl.hide();
+
+  void _requestZoomInOnCurrentPage() => _pageCtrlAt(_currentIndex)
+      .requestProgrammaticZoom(ViewerProgrammaticZoomKind.zoomIn);
+
+  void _requestZoomOutOnCurrentPage() => _pageCtrlAt(_currentIndex)
+      .requestProgrammaticZoom(ViewerProgrammaticZoomKind.zoomOut);
+
+  void _requestZoomResetOnCurrentPage() => _pageCtrlAt(_currentIndex)
+      .requestProgrammaticZoom(ViewerProgrammaticZoomKind.reset);
+
+  void _animateToPreviousPage() {
+    if (_currentIndex <= 0) return;
+    _pageController.previousPage(
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  void _animateToNextPage() {
+    if (_currentIndex >= _itemCount - 1) return;
+    _pageController.nextPage(
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  void _toggleInfoFromChrome() {
+    final c = _currentInfoCtrl;
+    if (c.state == InfoState.shown) {
+      c.hide();
+    } else {
+      c.show();
+    }
+    widget.onInfoStateChanged?.call(c.state);
+    widget.controller?.updateInfoState(c.state);
+  }
+
+  void _closeViewerFromChrome() {
+    widget.onDismiss?.call();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  ViewerDesktopChromeContext _desktopChromeContext(double dismissProgress) {
+    final pc = _pageCtrlAt(_currentIndex);
+    final item = _itemAt(_currentIndex);
+    final hasInfoPanel = item.hasInfo && widget.infoBuilder != null;
+    final scale = pc.contentScale;
+    const maxS = 5.0;
+    return ViewerDesktopChromeContext(
+      itemCount: _itemCount,
+      currentIndex: _currentIndex,
+      currentItem: item,
+      closeViewer: _closeViewerFromChrome,
+      goToPrevious: _animateToPreviousPage,
+      goToNext: _animateToNextPage,
+      canGoToPrevious: _currentIndex > 0,
+      canGoToNext: _currentIndex < _itemCount - 1,
+      toggleInfo: _toggleInfoFromChrome,
+      infoState: _currentInfoCtrl.state,
+      hasInfoPanel: hasInfoPanel,
+      zoomIn: _requestZoomInOnCurrentPage,
+      zoomOut: _requestZoomOutOnCurrentPage,
+      contentScale: scale,
+      canZoomIn: _cfg.enableZoom && scale < maxS - 0.05,
+      canZoomOut: _cfg.enableZoom && scale > 1.03,
+      controller: widget.controller,
+      config: widget.config,
+      theme: widget.theme,
+      barsVisible: _barsVisible,
+      isZoomed: pc.isZoomed,
+      dismissProgress: dismissProgress,
+    );
+  }
 
   // ── 下拉关闭 ────────────────────────────────────────────────────────────
 
@@ -344,6 +437,9 @@ class _MediaViewerState extends State<MediaViewer>
 
   // ── 构造顶底栏上下文 ─────────────────────────────────────────────────────
 
+  bool get _currentHasInfoPanel =>
+      _itemAt(_currentIndex).hasInfo && widget.infoBuilder != null;
+
   ViewerBarContext _barCtx(double dismissProgress) => ViewerBarContext(
         index: _currentIndex,
         item: _itemAt(_currentIndex),
@@ -353,6 +449,7 @@ class _MediaViewerState extends State<MediaViewer>
         barsVisible: _barsVisible,
         infoRevealProgress: _currentInfoCtrl.revealProgress,
         isZoomed: _pageCtrlAt(_currentIndex).isZoomed,
+        usesDesktopUi: widget.config.usesDesktopUi,
       );
 
   // ── build ────────────────────────────────────────────────────────────────
@@ -364,8 +461,14 @@ class _MediaViewerState extends State<MediaViewer>
     // 同时监听下拉位移与当前页信息控制器：拖动关闭与信息面板动画都会刷新顶底栏。
     // Listenable.merge 在每次 build 新建，但 build 仅由 setState 触发，开销可接受。
     return ListenableBuilder(
-      listenable: Listenable.merge([_dismissOffset, _currentInfoCtrl]),
+      listenable: Listenable.merge([
+        _dismissOffset,
+        _currentInfoCtrl,
+        _pageCtrlAt(_currentIndex),
+        if (widget.controller != null) widget.controller!,
+      ]),
       builder: (ctx, _) {
+        final shellCfg = widget.config.resolveForShell();
         final rawOffset = _dismissOffset.value;
         final progress = _dismissProgress(rawOffset);
         final contentDy = rawOffset * widget.config.viewerDismissDownDamping;
@@ -373,7 +476,7 @@ class _MediaViewerState extends State<MediaViewer>
         final barAlpha =
             widget.config.barsFadeWithDismissProgress ? bgAlpha : 1.0;
 
-        return Stack(
+        Widget stack = Stack(
           children: [
             // 背景（路由非不透明，可透出下层）
             Positioned.fill(
@@ -394,7 +497,7 @@ class _MediaViewerState extends State<MediaViewer>
                     // 放大时禁止横滑，单指拖动交给 PhotoView。
                     physics: _pageCtrlAt(_currentIndex).isZoomed
                         ? const NeverScrollableScrollPhysics()
-                        : (widget.config.enableHorizontalPaging
+                        : (shellCfg.enableHorizontalPaging
                             ? const BouncingScrollPhysics()
                             : const NeverScrollableScrollPhysics()),
                     onPageChanged: _onPageChanged,
@@ -405,7 +508,7 @@ class _MediaViewerState extends State<MediaViewer>
                       item: _itemAt(i),
                       infoController: _infoCtrlAt(i),
                       pageController: _pageCtrlAt(i),
-                      config: widget.config,
+                      config: shellCfg,
                       theme: widget.theme,
                       pageBuilder: widget.pageBuilder,
                       infoBuilder: widget.infoBuilder,
@@ -422,6 +525,18 @@ class _MediaViewerState extends State<MediaViewer>
                 ),
               ),
             ),
+
+            if (widget.config.usesDesktopUi)
+              Positioned.fill(
+                child: widget.desktopChromeBuilder != null
+                    ? widget.desktopChromeBuilder!(
+                        ctx,
+                        _desktopChromeContext(progress),
+                      )
+                    : DefaultViewerDesktopChrome(
+                        desktopCtx: _desktopChromeContext(progress),
+                      ),
+              ),
 
             // 顶栏：外层 Opacity 跟下拉进度；内层 AnimatedOpacity 跟单击显隐。
             // IgnorePointer：隐藏时不抢点击。
@@ -472,6 +587,65 @@ class _MediaViewerState extends State<MediaViewer>
               ),
           ],
         );
+
+        if (widget.config.usesDesktopUi) {
+          final shortcuts = <ShortcutActivator, VoidCallback>{
+            const SingleActivator(LogicalKeyboardKey.arrowLeft):
+                _animateToPreviousPage,
+            const SingleActivator(LogicalKeyboardKey.arrowRight):
+                _animateToNextPage,
+          };
+          if (_cfg.enableZoom) {
+            shortcuts[const SingleActivator(
+              LogicalKeyboardKey.equal,
+              control: true,
+            )] = _requestZoomInOnCurrentPage;
+            shortcuts[const SingleActivator(
+              LogicalKeyboardKey.equal,
+              meta: true,
+            )] = _requestZoomInOnCurrentPage;
+            shortcuts[const SingleActivator(
+              LogicalKeyboardKey.numpadAdd,
+              control: true,
+            )] = _requestZoomInOnCurrentPage;
+            shortcuts[const SingleActivator(
+              LogicalKeyboardKey.minus,
+              control: true,
+            )] = _requestZoomOutOnCurrentPage;
+            shortcuts[const SingleActivator(
+              LogicalKeyboardKey.minus,
+              meta: true,
+            )] = _requestZoomOutOnCurrentPage;
+            shortcuts[const SingleActivator(
+              LogicalKeyboardKey.numpadSubtract,
+              control: true,
+            )] = _requestZoomOutOnCurrentPage;
+          }
+          shortcuts[const SingleActivator(
+            LogicalKeyboardKey.keyI,
+            control: true,
+          )] = () {
+            if (_currentHasInfoPanel) _toggleInfoFromChrome();
+          };
+          shortcuts[const SingleActivator(
+            LogicalKeyboardKey.keyI,
+            meta: true,
+          )] = () {
+            if (_currentHasInfoPanel) _toggleInfoFromChrome();
+          };
+          shortcuts[const SingleActivator(LogicalKeyboardKey.escape)] =
+              _closeViewerFromChrome;
+
+          stack = CallbackShortcuts(
+            bindings: shortcuts,
+            child: Focus(
+              autofocus: true,
+              child: stack,
+            ),
+          );
+        }
+
+        return stack;
       },
     );
   }

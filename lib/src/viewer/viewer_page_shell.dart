@@ -101,10 +101,7 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   InfoSheetController get _info => widget.infoController;
   ViewerInteractionConfig get _cfg => widget.config;
 
-  bool get _hasInfo =>
-      widget.item.hasInfo &&
-      widget.infoBuilder != null &&
-      _cfg.enableInfoGesture;
+  bool get _hasInfo => widget.item.hasInfo && widget.infoBuilder != null;
 
   double _resolveScreenHeight(BuildContext ctx) =>
       widget.screenHeight ?? MediaQuery.of(ctx).size.height;
@@ -125,13 +122,16 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       if (dy.abs() < 3) return;
 
       if (dy < 0) {
-        // 向上 → 信息面板
-        _gestureMode =
-            _hasInfo ? _GestureMode.expandInfo : _GestureMode.consumed;
+        // 向上：仅在手势开启且本页有信息区时展开面板。
+        _gestureMode = (_cfg.enableInfoGesture && _hasInfo)
+            ? _GestureMode.expandInfo
+            : _GestureMode.consumed;
       } else {
         // 向下
         if (_info.state == InfoState.shown) {
-          _gestureMode = _GestureMode.collapseInfo;
+          _gestureMode = _cfg.enableInfoGesture
+              ? _GestureMode.collapseInfo
+              : _GestureMode.consumed;
         } else if (widget.pageController.isZoomed ||
             !_cfg.enableDismissGesture) {
           _gestureMode = _GestureMode.consumed;
@@ -350,6 +350,9 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
   late final PhotoViewScaleStateController _scaleStateCtrl;
   late final AnimationController _animCtrl;
 
+  /// 与 PhotoView 可视区域一致，用于取视口中心的全局坐标（与 controller.position 同坐标系）。
+  final GlobalKey _photoViewportKey = GlobalKey();
+
   Animation<double>? _scaleAnim;
   Animation<Offset>? _positionAnim;
 
@@ -370,7 +373,7 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
       vsync: this,
       duration: const Duration(milliseconds: 250),
     )..addListener(_onAnimTick);
-    debugPrint('[查看器][缩放] initState enableDoubleTap=${widget.enableDoubleTap}');
+    widget.pageController.addListener(_onPageCtrlForProgrammaticZoom);
   }
 
   @override
@@ -378,7 +381,6 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     super.didUpdateWidget(old);
     // 信息面板将起时关闭缩放：立即回到 1×。
     if (old.enabled && !widget.enabled && _isZoomed) {
-      debugPrint('[查看器][缩放] 缩放关闭且当前已放大 — 强制 1×');
       _animCtrl.stop();
       _photoCtrl.updateMultiple(scale: _kMinScale, position: Offset.zero);
       _scaleStateCtrl.scaleState = PhotoViewScaleState.initial;
@@ -388,6 +390,7 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
 
   @override
   void dispose() {
+    widget.pageController.removeListener(_onPageCtrlForProgrammaticZoom);
     _animCtrl.removeListener(_onAnimTick);
     _photoCtrl.dispose();
     _scaleStateCtrl.dispose();
@@ -398,6 +401,58 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
   // ── 辅助 ───────────────────────────────────────────────────────────────
 
   bool get _isZoomed => (_photoCtrl.scale ?? _kMinScale) > 1.02;
+
+  void _onPageCtrlForProgrammaticZoom() {
+    final kind = widget.pageController.takeProgrammaticZoom();
+    if (kind == null) return;
+    if (!widget.enabled) return;
+    switch (kind) {
+      case ViewerProgrammaticZoomKind.zoomIn:
+        _applyStepScale(1.2);
+      case ViewerProgrammaticZoomKind.zoomOut:
+        _applyStepScale(1 / 1.2);
+      case ViewerProgrammaticZoomKind.reset:
+        _programmaticResetScale();
+    }
+  }
+
+  void _applyStepScale(double factor) {
+    _animCtrl.stop();
+    final cur = _photoCtrl.scale ?? _kMinScale;
+    final next = (cur * factor).clamp(_kMinScale, _kMaxScale);
+    if ((next - cur).abs() < 0.002) return;
+    final pos = _photoCtrl.position;
+    final ratio = next / cur;
+
+    // PhotoView 内部 position 与缩放手势 focal 一致，均为全局坐标；锚点须用视口中心的全局坐标。
+    final box =
+        _photoViewportKey.currentContext?.findRenderObject() as RenderBox?;
+    Offset newPos;
+    if (box != null && box.hasSize) {
+      final centerGlobal = box.localToGlobal(
+        Offset(box.size.width / 2, box.size.height / 2),
+      );
+      newPos = Offset(
+        centerGlobal.dx + (pos.dx - centerGlobal.dx) * ratio,
+        centerGlobal.dy + (pos.dy - centerGlobal.dy) * ratio,
+      );
+    } else {
+      // 尚无布局时退化为与捏合「焦点不动」时类似的比例平移，避免锚到错误局部坐标。
+      newPos = Offset(pos.dx * ratio, pos.dy * ratio);
+    }
+
+    _photoCtrl.updateMultiple(scale: next, position: newPos);
+    _scaleStateCtrl.scaleState = next > _kMinScale + 0.02
+        ? PhotoViewScaleState.zoomedIn
+        : PhotoViewScaleState.initial;
+  }
+
+  void _programmaticResetScale() {
+    _animCtrl.stop();
+    _photoCtrl.updateMultiple(scale: _kMinScale, position: Offset.zero);
+    _scaleStateCtrl.scaleState = PhotoViewScaleState.initial;
+    widget.pageController.reportContentScale(_kMinScale);
+  }
 
   void _onPhotoViewState(PhotoViewControllerValue value) {
     final s = value.scale ?? _kMinScale;
@@ -422,7 +477,6 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     PhotoViewControllerValue __,
   ) {
     _lastTapPosition = details.localPosition;
-    debugPrint('[查看器][缩放] onTapDown $_lastTapPosition');
   }
 
   void _onPhotoViewTapUp(
@@ -430,16 +484,11 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     TapUpDetails details,
     PhotoViewControllerValue __,
   ) {
-    debugPrint('[查看器][缩放] onTapUp 确认为单击 → onSingleTap');
     widget.onSingleTap?.call();
   }
 
   PhotoViewScaleState _handleDoubleTap(PhotoViewScaleState currentState) {
-    debugPrint(
-        '[查看器][缩放] _handleDoubleTap currentState=$currentState isZoomed=$_isZoomed');
-
     if (!widget.enableDoubleTap) {
-      debugPrint('[查看器][缩放] 双击缩放已关闭 — 忽略');
       return currentState;
     }
 
@@ -458,7 +507,6 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     if (_isZoomed) {
       targetScale = _kMinScale;
       targetPosition = Offset.zero;
-      debugPrint('[查看器][缩放] 双击 → 恢复 1×');
     } else {
       const s = _kDoubleTapScale;
       targetScale = s;
@@ -468,8 +516,6 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
         -_lastTapPosition.dx * (s - 1),
         -_lastTapPosition.dy * (s - 1),
       );
-      debugPrint(
-          '[查看器][缩放] 双击 → 放大 ${s}x 于 $_lastTapPosition targetPos=$targetPosition');
     }
 
     final curved = CurvedAnimation(
@@ -494,20 +540,23 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
       return widget.child;
     }
 
-    return PhotoView.customChild(
-      controller: _photoCtrl,
-      scaleStateController: _scaleStateCtrl,
-      // tightMode：子级约束为视口尺寸，边界夹紧无需额外 childSize。
-      tightMode: true,
-      minScale: _kMinScale,
-      maxScale: _kMaxScale,
-      initialScale: _kMinScale,
-      backgroundDecoration: const BoxDecoration(color: Colors.transparent),
-      gestureDetectorBehavior: HitTestBehavior.translucent,
-      onTapDown: _onPhotoViewTapDown,
-      onTapUp: widget.onSingleTap != null ? _onPhotoViewTapUp : null,
-      scaleStateCycle: _handleDoubleTap,
-      child: widget.child,
+    return SizedBox.expand(
+      key: _photoViewportKey,
+      child: PhotoView.customChild(
+        controller: _photoCtrl,
+        scaleStateController: _scaleStateCtrl,
+        // tightMode：子级约束为视口尺寸，边界夹紧无需额外 childSize。
+        tightMode: true,
+        minScale: _kMinScale,
+        maxScale: _kMaxScale,
+        initialScale: _kMinScale,
+        backgroundDecoration: const BoxDecoration(color: Colors.transparent),
+        gestureDetectorBehavior: HitTestBehavior.translucent,
+        onTapDown: _onPhotoViewTapDown,
+        onTapUp: widget.onSingleTap != null ? _onPhotoViewTapUp : null,
+        scaleStateCycle: _handleDoubleTap,
+        child: widget.child,
+      ),
     );
   }
 }

@@ -1,3 +1,5 @@
+import 'viewer_desktop.dart';
+
 /// 左右翻页时，各页信息面板状态如何记忆。
 enum InfoSyncMode {
   /// 每页独立记忆展开高度等（默认）。
@@ -31,6 +33,10 @@ class ViewerInteractionConfig {
     this.enableDoubleTapZoom = true,
     this.enableTapToToggleBars = true,
     this.enableSystemUiToggle = true,
+    this.desktopUiMode = ViewerDesktopUiMode.auto,
+    this.desktopAllowSwipePaging = false,
+    this.desktopAllowDismissDrag = false,
+    this.desktopAllowInfoDrag = false,
   });
 
   // ── 阻尼（0～1，越大越「拖不动」）────────────────────────────────────────
@@ -103,6 +109,33 @@ class ViewerInteractionConfig {
   /// 查看器销毁时会恢复边缘到边模式。
   final bool enableSystemUiToggle;
 
+  // ── 桌面 UI（[resolveUsesDesktopUi] 为 true 时生效）────────────────────────
+
+  /// 是否显示桌面控件区，以及是否按桌面规则收紧手势（见 [resolveForShell]）。
+  final ViewerDesktopUiMode desktopUiMode;
+
+  /// 桌面模式下是否仍允许横向滑动翻页（默认 false，依赖按钮 / 快捷键）。
+  final bool desktopAllowSwipePaging;
+
+  /// 桌面模式下是否仍允许从内容区下拉关闭（默认 false，建议用顶栏关闭）。
+  final bool desktopAllowDismissDrag;
+
+  /// 桌面模式下是否仍允许上滑 / 拖动手势控制信息面板（默认 false，建议用信息按钮）。
+  final bool desktopAllowInfoDrag;
+
+  /// 是否启用桌面布局与控件区（由 [desktopUiMode] 与宿主平台决定）。
+  bool get usesDesktopUi => resolveViewerDesktopUi(desktopUiMode);
+
+  /// 传给 [ViewerPageShell] 等的有效配置：在桌面模式下收紧翻页 / 关闭 / 信息手势。
+  ViewerInteractionConfig resolveForShell() {
+    if (!usesDesktopUi) return this;
+    return copyWith(
+      enableHorizontalPaging: enableHorizontalPaging && desktopAllowSwipePaging,
+      enableDismissGesture: enableDismissGesture && desktopAllowDismissDrag,
+      enableInfoGesture: enableInfoGesture && desktopAllowInfoDrag,
+    );
+  }
+
   /// 复制并覆盖指定字段。
   ViewerInteractionConfig copyWith({
     double? infoDragUpDamping,
@@ -124,6 +157,10 @@ class ViewerInteractionConfig {
     bool? enableDoubleTapZoom,
     bool? enableTapToToggleBars,
     bool? enableSystemUiToggle,
+    ViewerDesktopUiMode? desktopUiMode,
+    bool? desktopAllowSwipePaging,
+    bool? desktopAllowDismissDrag,
+    bool? desktopAllowInfoDrag,
   }) {
     return ViewerInteractionConfig(
       infoDragUpDamping: infoDragUpDamping ?? this.infoDragUpDamping,
@@ -156,6 +193,12 @@ class ViewerInteractionConfig {
       enableTapToToggleBars:
           enableTapToToggleBars ?? this.enableTapToToggleBars,
       enableSystemUiToggle: enableSystemUiToggle ?? this.enableSystemUiToggle,
+      desktopUiMode: desktopUiMode ?? this.desktopUiMode,
+      desktopAllowSwipePaging:
+          desktopAllowSwipePaging ?? this.desktopAllowSwipePaging,
+      desktopAllowDismissDrag:
+          desktopAllowDismissDrag ?? this.desktopAllowDismissDrag,
+      desktopAllowInfoDrag: desktopAllowInfoDrag ?? this.desktopAllowInfoDrag,
     );
   }
 }

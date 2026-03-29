@@ -13,8 +13,8 @@
 /// MediaViewer.open(
 ///   context,
 ///   items: [
-///     ViewerItem(id: '1', payload: 'https://example.com/photo.jpg'),
-///     ViewerItem(id: '2', payload: 'https://example.com/photo2.jpg'),
+///     DefaultViewerItem(id: '1', payload: 'https://example.com/photo.jpg'),
+///     DefaultViewerItem(id: '2', payload: 'https://example.com/photo2.jpg'),
 ///   ],
 ///   pageBuilder: (context, pageCtx) {
 ///     return Image.network(
@@ -34,11 +34,22 @@
 library yuni_photo_view;
 
 // ── 核心数据模型 ─────────────────────────────────────────────────────────────
-export 'src/core/viewer_item.dart' show ViewerItem;
+export 'src/core/viewer_item.dart' show ViewerItem, DefaultViewerItem;
 
 // ── 交互配置 ─────────────────────────────────────────────────────────────────
 export 'src/core/interaction_config.dart'
     show ViewerInteractionConfig, InfoSyncMode;
+
+// ── 桌面宿主与 UI 模式 ───────────────────────────────────────────────────────
+export 'src/core/viewer_desktop.dart'
+    show ViewerDesktopUiMode, isFlutterDesktopHost, resolveViewerDesktopUi;
+
+// ── 桌面控件区 API ───────────────────────────────────────────────────────────
+export 'src/core/viewer_desktop_chrome.dart'
+    show ViewerDesktopChromeContext, ViewerDesktopChromeBuilder;
+
+export 'src/widgets/default_viewer_desktop_chrome.dart'
+    show DefaultViewerDesktopChrome;
 
 // ── 状态与 Builder 类型 ───────────────────────────────────────────────────────
 export 'src/core/viewer_state.dart'
@@ -47,6 +58,7 @@ export 'src/core/viewer_state.dart'
         ViewerPageContext,
         ViewerBarContext,
         ViewerPageController,
+        ViewerProgrammaticZoomKind,
         ViewerPageBuilder,
         ViewerInfoBuilder,
         ViewerBarBuilder,

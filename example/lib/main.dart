@@ -5,6 +5,7 @@ import 'cases/basic_case.dart';
 import 'cases/comprehensive_case.dart';
 import 'cases/custom_info_case.dart';
 import 'cases/damping_case.dart';
+import 'cases/desktop_custom_chrome_case.dart';
 import 'cases/full_custom_bar_case.dart';
 import 'cases/hero_case.dart';
 import 'cases/mirrored_info_case.dart';
@@ -83,6 +84,11 @@ class _CaseListPage extends StatelessWidget {
         title: '8. Info 镜像同步',
         subtitle: 'infoSyncMode=mirrored，翻页保持展开',
         builder: (_) => const MirroredInfoCase(),
+      ),
+      _CaseEntry(
+        title: '9. 桌面自定义控件条',
+        subtitle: 'desktopChromeBuilder + 业务按钮示例（force 模式全平台可预览）',
+        builder: (_) => const DesktopCustomChromeCase(),
       ),
     ];
 

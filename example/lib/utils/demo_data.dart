@@ -6,7 +6,7 @@ class DemoData {
 
   /// 横图、竖图、方图混合的网络图片列表，用于多数案例。
   static const List<ViewerItem> images = [
-    ViewerItem(
+    DefaultViewerItem(
       id: 'img_1',
       kind: 'image',
       payload: 'https://picsum.photos/seed/yuniA/1200/800',
@@ -25,7 +25,7 @@ class DemoData {
         'shutter': '1/17 s',
       },
     ),
-    ViewerItem(
+    DefaultViewerItem(
       id: 'img_2',
       kind: 'image',
       payload: 'https://picsum.photos/seed/yuniB/800/1200',
@@ -44,7 +44,7 @@ class DemoData {
         'shutter': '1/60 s',
       },
     ),
-    ViewerItem(
+    DefaultViewerItem(
       id: 'img_3',
       kind: 'image',
       payload: 'https://picsum.photos/seed/yuniC/1000/1000',
@@ -63,7 +63,7 @@ class DemoData {
         'shutter': '1/800 s',
       },
     ),
-    ViewerItem(
+    DefaultViewerItem(
       id: 'img_4',
       kind: 'image',
       payload: 'https://picsum.photos/seed/yuniD/1600/900',
@@ -82,7 +82,7 @@ class DemoData {
         'shutter': '1/250 s',
       },
     ),
-    ViewerItem(
+    DefaultViewerItem(
       id: 'img_5',
       kind: 'image',
       payload: 'https://picsum.photos/seed/yuniE/900/1600',
@@ -102,7 +102,7 @@ class DemoData {
       },
     ),
     // 无 Info 的一条：用于演示该页上滑信息手势被关闭。
-    ViewerItem(
+    DefaultViewerItem(
       id: 'img_6',
       kind: 'image',
       payload: 'https://picsum.photos/seed/yuniF/1200/675',
@@ -111,12 +111,13 @@ class DemoData {
   ];
 
   /// 与 [images] 相同，但全部 `hasInfo: false`（用于「纯无 Info」对比时可复用）。
-  static List<ViewerItem> get noInfoImages =>
-      images.map((e) => e.copyWith(hasInfo: false)).toList();
+  static List<ViewerItem> get noInfoImages => images
+      .map((e) => (e as DefaultViewerItem).copyWith(hasInfo: false))
+      .toList();
 
   /// 综合案例专用：普通图 + Live 样式（仅 meta，无真实 .livp）+ 可模拟「查看原图」。
   static List<ViewerItem> get comprehensiveItems => [
-        images[0].copyWith(
+        (images[0] as DefaultViewerItem).copyWith(
           meta: {
             ...?images[0].meta,
             'title': '普通照片',
@@ -125,7 +126,7 @@ class DemoData {
             'hdUrl': 'https://picsum.photos/seed/yuniA_hd/2400/1600',
           },
         ),
-        const ViewerItem(
+        const DefaultViewerItem(
           id: 'live_demo',
           kind: 'image',
           payload: 'https://picsum.photos/seed/liveCover/900/1200',
@@ -141,7 +142,7 @@ class DemoData {
             'hasOriginal': false,
           },
         ),
-        images[2].copyWith(
+        (images[2] as DefaultViewerItem).copyWith(
           meta: {
             ...?images[2].meta,
             'title': '另一张（含原图）',
@@ -154,14 +155,14 @@ class DemoData {
 
   /// 视频类 [ViewerItem] 示例（画面由业务用 pageBuilder 渲染，插件只提供壳）。
   static const List<ViewerItem> videos = [
-    ViewerItem(
+    DefaultViewerItem(
       id: 'vid_1',
       kind: 'video',
       payload: 'https://www.w3schools.com/html/mov_bbb.mp4',
       meta: {'title': '示例视频 1', 'duration': '0:10'},
       hasInfo: true,
     ),
-    ViewerItem(
+    DefaultViewerItem(
       id: 'vid_2',
       kind: 'video',
       payload: 'https://www.w3schools.com/html/movie.mp4',

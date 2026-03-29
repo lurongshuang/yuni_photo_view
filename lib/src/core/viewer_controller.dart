@@ -17,6 +17,9 @@ class MediaViewerController extends ChangeNotifier {
   VoidCallback? _showInfoCallback;
   VoidCallback? _hideInfoCallback;
   ValueChanged<bool>? _setBarsVisibleCallback;
+  VoidCallback? _zoomInCallback;
+  VoidCallback? _zoomOutCallback;
+  VoidCallback? _zoomResetCallback;
   int _pendingJumpIndex = 0;
 
   // ── 只读状态 ─────────────────────────────────────────────────────────────
@@ -69,11 +72,17 @@ class MediaViewerController extends ChangeNotifier {
     required VoidCallback showInfo,
     required VoidCallback hideInfo,
     required ValueChanged<bool> setBarsVisible,
+    VoidCallback? zoomContentIn,
+    VoidCallback? zoomContentOut,
+    VoidCallback? resetContentZoom,
   }) {
     _jumpToPageCallback = jumpToPage;
     _showInfoCallback = showInfo;
     _hideInfoCallback = hideInfo;
     _setBarsVisibleCallback = setBarsVisible;
+    _zoomInCallback = zoomContentIn;
+    _zoomOutCallback = zoomContentOut;
+    _zoomResetCallback = resetContentZoom;
   }
 
   // ── 对外指令 ───────────────────────────────────────────────────────────────
@@ -107,6 +116,15 @@ class MediaViewerController extends ChangeNotifier {
 
   /// 设置顶栏、底栏显隐。
   void setBarsVisible(bool visible) => _setBarsVisibleCallback?.call(visible);
+
+  /// 当前页内容程序化放大一步（桌面工具栏 / 快捷键）。
+  void zoomContentIn() => _zoomInCallback?.call();
+
+  /// 当前页内容程序化缩小一步。
+  void zoomContentOut() => _zoomOutCallback?.call();
+
+  /// 当前页内容还原为 1×。
+  void resetContentZoom() => _zoomResetCallback?.call();
 
   /// @nodoc
   int get pendingJumpIndex => _pendingJumpIndex;

@@ -79,11 +79,15 @@ class ViewerBarContext {
     required this.barsVisible,
     required this.infoRevealProgress,
     required this.isZoomed,
+    this.usesDesktopUi = false,
   });
 
   final int index;
   final ViewerItem item;
   final InfoState infoState;
+
+  /// 与 [ViewerInteractionConfig.usesDesktopUi] 一致，便于顶栏/底栏与桌面控件区配合。
+  final bool usesDesktopUi;
 
   /// 下拉关闭进度（0.0～1.0）。
   final double dismissProgress;
@@ -107,6 +111,15 @@ class ViewerBarContext {
   final bool isZoomed;
 }
 
+// ── 程序化缩放（桌面按钮 / 快捷键）──────────────────────────────────────────
+
+/// 由 [ViewerPageController.requestProgrammaticZoom] 触发，由壳内缩放层消费。
+enum ViewerProgrammaticZoomKind {
+  zoomIn,
+  zoomOut,
+  reset,
+}
+
 // ── 单页缩放上报 ─────────────────────────────────────────────────────────────
 
 /// 由业务内容（如 PhotoView）向框架上报缩放与平移，用于手势路由（关闭拖拽、左右翻页）。
@@ -115,6 +128,8 @@ class ViewerBarContext {
 class ViewerPageController extends ChangeNotifier {
   double _contentScale = 1.0;
   Offset _contentOffset = Offset.zero;
+
+  ViewerProgrammaticZoomKind? _pendingProgrammaticZoom;
 
   /// 是否视为已放大（内部阈值约 1.02）。
   bool get isZoomed => _contentScale > 1.02;
@@ -143,6 +158,19 @@ class ViewerPageController extends ChangeNotifier {
     _contentScale = 1.0;
     _contentOffset = Offset.zero;
     if (wasZoomed) notifyListeners();
+  }
+
+  /// 桌面工具栏等：请求当前页内容放大 / 缩小 / 还原（由壳内 PhotoView 层监听并执行）。
+  void requestProgrammaticZoom(ViewerProgrammaticZoomKind kind) {
+    _pendingProgrammaticZoom = kind;
+    notifyListeners();
+  }
+
+  /// @nodoc
+  ViewerProgrammaticZoomKind? takeProgrammaticZoom() {
+    final k = _pendingProgrammaticZoom;
+    _pendingProgrammaticZoom = null;
+    return k;
   }
 }
 
