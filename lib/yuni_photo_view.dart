@@ -68,3 +68,8 @@ export 'src/viewer/media_viewer.dart' show MediaViewer;
 /// Applies cover-scale-up for short content and top-align-clip for tall content,
 /// with a smooth centre→top alignment transition driven by [infoRevealProgress].
 export 'src/widgets/viewer_media_cover_frame.dart' show ViewerMediaCoverFrame;
+
+/// Drop-in replacement for [Hero] inside [pageBuilder].
+/// Provides a smooth default flight-shuttle (BoxFit.cover + animated corner
+/// radius) and exposes [shuttleBuilder] for full customisation.
+export 'src/widgets/viewer_hero.dart' show ViewerHero;

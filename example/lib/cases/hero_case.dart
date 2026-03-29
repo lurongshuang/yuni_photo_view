@@ -3,13 +3,15 @@ import 'package:yuni_photo_view/yuni_photo_view.dart';
 
 import '../utils/demo_data.dart';
 
-/// Case 6 — Hero animation.
+/// Case 6 — Hero 动画。
 ///
-/// Demonstrates:
-/// - Shared-element Hero from thumbnail grid into the viewer.
-/// - Hero tag is built into the [pageBuilder]; the framework is transparent.
-/// - The viewer's non-opaque route allows the Hero to animate naturally.
-/// - On dismiss, Navigator.pop() triggers the Hero return animation.
+/// 演示：
+/// - 从缩略图网格到浏览器的共享元素 Hero 动画。
+/// - 使用 [ViewerHero] 代替原生 [Hero]，消除飞入/飞出闪烁：
+///   • push 开始：shuttle 与缩略图外观完全一致（cover + 圆角 8px）。
+///   • push 结束：shuttle 与 ViewerMediaCoverFrame 外观完全一致（contain + 无圆角）。
+///   • pop 开始：与 viewer 外观一致；pop 结束：与缩略图一致。
+///   • 拖拽返回松手触发 pop 前，已将 dismiss offset 归零，Hero 从正确坐标起飞。
 class HeroCase extends StatelessWidget {
   const HeroCase({super.key});
 
@@ -57,21 +59,28 @@ class HeroCase extends StatelessWidget {
         defaultShownExtent: 0.45,
       ),
       pageBuilder: (ctx, pageCtx) {
-        // Business wraps in Hero with the same tag as the thumbnail.
-        // ViewerMediaCoverFrame is placed inside Hero so the Hero animation
-        // encompasses the full cover-scaled image.
-        return Hero(
+        final url = pageCtx.item.payload as String;
+
+        // 使用 ViewerHero 代替原生 Hero。
+        // thumbnailCornerRadius 与网格侧 ClipRRect radius 保持一致（均为 8）。
+        return ViewerHero(
           tag: 'hero_${pageCtx.item.id}',
+          imageUrl: url,
+          thumbnailCornerRadius: 8,
           child: ViewerMediaCoverFrame(
             revealProgress: pageCtx.infoRevealProgress,
             child: Image.network(
-              pageCtx.item.payload as String,
+              url,
+              gaplessPlayback: true,
               errorBuilder: (_, __, ___) => const SizedBox(
                 width: 200,
                 height: 200,
                 child: Center(
                   child: Icon(
-                      Icons.broken_image, color: Colors.white54, size: 64),
+                    Icons.broken_image,
+                    color: Colors.white54,
+                    size: 64,
+                  ),
                 ),
               ),
             ),
@@ -89,12 +98,16 @@ class HeroCase extends StatelessWidget {
                 Text(
                   meta['title']!,
                   style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold),
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               const SizedBox(height: 8),
               if (meta['date'] != null)
-                Text(meta['date']!,
-                    style: const TextStyle(color: Colors.grey)),
+                Text(
+                  meta['date']!,
+                  style: const TextStyle(color: Colors.grey),
+                ),
               if (meta['location'] != null) ...[
                 const SizedBox(height: 4),
                 Row(
@@ -103,8 +116,10 @@ class HeroCase extends StatelessWidget {
                         size: 16, color: Colors.grey),
                     const SizedBox(width: 4),
                     Expanded(
-                      child: Text(meta['location']!,
-                          style: const TextStyle(color: Colors.grey)),
+                      child: Text(
+                        meta['location']!,
+                        style: const TextStyle(color: Colors.grey),
+                      ),
                     ),
                   ],
                 ),
