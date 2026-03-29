@@ -3,21 +3,19 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
-/// A layout frame designed for image and video content inside [MediaViewer].
+/// 用于 [MediaViewer] 内图片/视频的布局框。
 ///
-/// Applies a **contain → cover + top-lock** semantic driven by [revealProgress]:
+/// 根据 [revealProgress] 在 **contain 居中** 与 **cover 顶对齐** 之间插值：
 ///
-/// | [revealProgress] | Scale | Vertical alignment |
+/// | [revealProgress] | 缩放 | 垂直对齐 |
 /// |---|---|---|
-/// | `0.0` (info hidden) | `min(1, viewH/natH)` — full image visible (contain) | centered |
-/// | `1.0` (info shown) | `max(1, viewH/natH)` — fills the viewport (cover) | top-locked |
-/// | `0…1` transition | smoothly interpolated between the two states | |
+/// | `0.0`（信息未展开） | `min(1, viewH/natH)`，整图可见（contain） | 居中 |
+/// | `1.0`（信息默认高度） | `max(1, viewH/natH)`，铺满可视区（cover） | 贴顶 |
+/// | `0…1` | 两者之间平滑插值 | 插值 |
 ///
-/// **Scale rules per case:**
-/// - Landscape / short image (`natH < viewH`): contain=1× (natural size), cover=scale-up to fill.
-/// - Portrait / tall image (`natH ≥ viewH`): contain=scale-down to fit, cover=1× (no downscale).
-///
-/// ## Usage
+/// **分情况：**
+/// - 横向/较矮图（`natH < viewH`）：contain 常为 1×，cover 为放大铺满。
+/// - 竖向/较高图（`natH ≥ viewH`）：contain 为缩小适配，cover 常为 1×（不再缩小）。
 ///
 /// ```dart
 /// pageBuilder: (context, pageCtx) {
@@ -28,8 +26,7 @@ import 'package:flutter/widgets.dart';
 /// }
 /// ```
 ///
-/// Pass the image **without** an explicit [BoxFit] — let [ViewerMediaCoverFrame]
-/// own the scale decision.
+/// 子组件**不要**再写死 [BoxFit]，交给本组件统一算缩放。
 class ViewerMediaCoverFrame extends SingleChildRenderObjectWidget {
   const ViewerMediaCoverFrame({
     required Widget child,
@@ -37,9 +34,7 @@ class ViewerMediaCoverFrame extends SingleChildRenderObjectWidget {
     super.key,
   }) : super(child: child);
 
-  /// Driven by [ViewerPageContext.infoRevealProgress].
-  /// - `0.0` → contain + centered
-  /// - `1.0` → cover + top-locked
+  /// 一般传入 [ViewerPageContext.infoRevealProgress]。
   final double revealProgress;
 
   @override
@@ -63,7 +58,7 @@ class ViewerMediaCoverFrame extends SingleChildRenderObjectWidget {
 
 // ---------------------------------------------------------------------------
 
-/// RenderObject that implements the contain→cover+top-lock paint logic.
+/// 实现 contain→cover + 垂直对齐插值的 [RenderObject]。
 class RenderCoverFrame extends RenderProxyBox {
   RenderCoverFrame({
     required double screenWidth,
@@ -82,21 +77,19 @@ class RenderCoverFrame extends RenderProxyBox {
   set revealProgress(double v) {
     if (_revealProgress == v) return;
     _revealProgress = v;
-    // Layout doesn't change — only paint transform changes.
+    // 仅变换绘制，布局约束不变。
     markNeedsPaint();
   }
 
-  // ── Layout ────────────────────────────────────────────────────────────────
+  // ── 布局 ────────────────────────────────────────────────────────────────
 
   @override
   void performLayout() {
-    final viewW = constraints.maxWidth.isFinite
-        ? constraints.maxWidth
-        : _screenWidth;
+    final viewW =
+        constraints.maxWidth.isFinite ? constraints.maxWidth : _screenWidth;
     final viewH = constraints.maxHeight.isFinite ? constraints.maxHeight : 0.0;
 
-    // Lay child at tight viewport width so it reports its width-constrained
-    // natural height (width × imageH/imageW).
+    // 子级在固定宽度下测量自然高度（宽×纵横比）。
     if (child != null) {
       child!.layout(
         BoxConstraints(
@@ -109,11 +102,10 @@ class RenderCoverFrame extends RenderProxyBox {
       );
     }
 
-    // Self fills the viewport.
     size = Size(viewW, viewH > 0 ? viewH : (child?.size.height ?? 0));
   }
 
-  // ── Paint ─────────────────────────────────────────────────────────────────
+  // ── 绘制 ────────────────────────────────────────────────────────────────
 
   @override
   void paint(PaintingContext context, Offset offset) {
@@ -130,24 +122,22 @@ class RenderCoverFrame extends RenderProxyBox {
 
     final p = _revealProgress.clamp(0.0, 1.0);
 
-    // contain: min(1, viewH/natH)  — shows full image (may letterbox)
-    // cover:   max(1, viewH/natH)  — fills viewport (may crop)
+    // contain：min(1, viewH/natH)，整图可见（可上下留白）
+    // cover：  max(1, viewH/natH)，铺满（可裁切）
     final containScale = (viewH / natH).clamp(0.0, 1.0);
     final coverScale = (viewH / natH).clamp(1.0, double.infinity);
     final scale = lerpDouble(containScale, coverScale, p)!;
 
     final scaledH = natH * scale;
-    // Vertical: lerp from center-align to top-align.
+    // 垂直方向：居中 → 贴顶
     final centerDy = (viewH - scaledH) / 2.0;
     final dy = lerpDouble(centerDy, 0.0, p)!;
 
-    // Horizontal: always center (natW == viewW after layout, so dx == 0).
-    // Keep the explicit formula in case of sub-pixel rounding.
+    // 水平始终居中（布局后子宽等于 viewW，dx 通常为 0，保留公式防舍入误差）
     final scaledW = viewW * scale;
     final dx = (viewW - scaledW) / 2.0;
 
     context.canvas.save();
-    // Clip to the viewport rectangle so scaled content doesn't bleed outside.
     context.canvas.clipRect(offset & size);
     context.canvas.translate(offset.dx + dx, offset.dy + dy);
     context.canvas.scale(scale, scale);
@@ -155,11 +145,11 @@ class RenderCoverFrame extends RenderProxyBox {
     context.canvas.restore();
   }
 
-  // ── Hit testing ───────────────────────────────────────────────────────────
+  // ── 命中测试 ────────────────────────────────────────────────────────────
 
   @override
   bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
-    // Inverse the paint transform so taps land on the correct child region.
+    // 与 paint 使用同一逆变换，保证点击落在正确子区域。
     final viewW = size.width;
     final viewH = size.height;
     final natH = child?.size.height ?? 0;
@@ -186,8 +176,7 @@ class RenderCoverFrame extends RenderProxyBox {
     return result.addWithPaintOffset(
       offset: Offset(dx, dy),
       position: position,
-      hitTest: (result, _) =>
-          child!.hitTest(result, position: transformed),
+      hitTest: (result, _) => child!.hitTest(result, position: transformed),
     );
   }
 }

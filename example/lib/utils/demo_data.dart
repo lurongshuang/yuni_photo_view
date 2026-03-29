@@ -1,10 +1,10 @@
 import 'package:yuni_photo_view/yuni_photo_view.dart';
 
-/// Shared demo data used across example cases.
+/// 各示例共用的演示数据（网络图片与视频 URL）。
 class DemoData {
   DemoData._();
 
-  /// A set of landscape + portrait network images with varied aspect ratios.
+  /// 横图、竖图、方图混合的网络图片列表，用于多数案例。
   static const List<ViewerItem> images = [
     ViewerItem(
       id: 'img_1',
@@ -101,7 +101,7 @@ class DemoData {
         'shutter': '1/500 s',
       },
     ),
-    // A no-info item to demonstrate the disabled info gesture.
+    // 无 Info 的一条：用于演示该页上滑信息手势被关闭。
     ViewerItem(
       id: 'img_6',
       kind: 'image',
@@ -110,11 +110,49 @@ class DemoData {
     ),
   ];
 
-  /// Same items but without info (for the no-info demo).
+  /// 与 [images] 相同，但全部 `hasInfo: false`（用于「纯无 Info」对比时可复用）。
   static List<ViewerItem> get noInfoImages =>
       images.map((e) => e.copyWith(hasInfo: false)).toList();
 
-  /// Mock video items (content rendered by business — framework only wraps).
+  /// 综合案例专用：普通图 + Live 样式（仅 meta，无真实 .livp）+ 可模拟「查看原图」。
+  static List<ViewerItem> get comprehensiveItems => [
+        images[0].copyWith(
+          meta: {
+            ...?images[0].meta,
+            'title': '普通照片',
+            'hasOriginal': true,
+            'previewUrl': images[0].payload,
+            'hdUrl': 'https://picsum.photos/seed/yuniA_hd/2400/1600',
+          },
+        ),
+        const ViewerItem(
+          id: 'live_demo',
+          kind: 'image',
+          payload: 'https://picsum.photos/seed/liveCover/900/1200',
+          meta: {
+            'title': 'Live Photo（样式演示）',
+            'date': '2026-03-28 10:00',
+            'location': '演示位置',
+            'size': '2.4 MB',
+            'resolution': '3024×4032',
+            // 业务约定：有 Live 样式 + 配套视频 URL（解析与解码在业务侧）
+            'livePhoto': true,
+            'motionUrl': 'https://www.w3schools.com/html/mov_bbb.mp4',
+            'hasOriginal': false,
+          },
+        ),
+        images[2].copyWith(
+          meta: {
+            ...?images[2].meta,
+            'title': '另一张（含原图）',
+            'hasOriginal': true,
+            'previewUrl': images[2].payload,
+            'hdUrl': 'https://picsum.photos/seed/yuniC_hd/2000/2000',
+          },
+        ),
+      ];
+
+  /// 视频类 [ViewerItem] 示例（画面由业务用 pageBuilder 渲染，插件只提供壳）。
   static const List<ViewerItem> videos = [
     ViewerItem(
       id: 'vid_1',

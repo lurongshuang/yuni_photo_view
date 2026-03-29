@@ -3,12 +3,11 @@ import 'package:yuni_photo_view/yuni_photo_view.dart';
 
 import '../utils/demo_data.dart';
 
-/// Case 3 — Rich custom info panel.
+/// 案例 3：复杂自定义信息面板。
 ///
-/// Demonstrates:
-/// - Multi-section info layout (header image preview, EXIF grid, map placeholder).
-/// - Long content that forces the sheet to expand beyond half-screen.
-/// - Async-style metadata reveal (simulated with FutureBuilder).
+/// - 多区块布局（拍摄信息、参数芯片、地图占位等）。
+/// - 内容较长时可把信息面板撑过半屏。
+/// - 用 FutureBuilder 模拟异步拉取额外元数据。
 class CustomInfoCase extends StatelessWidget {
   const CustomInfoCase({super.key});
 
@@ -59,7 +58,7 @@ class CustomInfoCase extends StatelessWidget {
   }
 }
 
-// ── Rich info panel ───────────────────────────────────────────────────────────
+// ── 富内容信息面板 ───────────────────────────────────────────────────────────
 
 class _RichInfoPanel extends StatefulWidget {
   const _RichInfoPanel({required this.item});
@@ -80,7 +79,7 @@ class _RichInfoPanelState extends State<_RichInfoPanel> {
   }
 
   Future<Map<String, dynamic>> _fetchExtraInfo(ViewerItem item) async {
-    // Simulate a 600 ms async load (e.g., reverse geocode + cloud API).
+    // 模拟 600ms 异步请求（例如逆地理编码 + 云端元数据）。
     await Future.delayed(const Duration(milliseconds: 600));
     return {
       'album': '2026年3月 旅行',
@@ -96,7 +95,7 @@ class _RichInfoPanelState extends State<_RichInfoPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Basic EXIF ──────────────────────────────────────────────────────
+        // ── 基础拍摄信息 ─────────────────────────────────────────────────────
         _Section(
           title: '拍摄信息',
           child: Column(
@@ -109,7 +108,7 @@ class _RichInfoPanelState extends State<_RichInfoPanel> {
           ),
         ),
 
-        // ── Camera parameters ───────────────────────────────────────────────
+        // ── 拍摄参数（芯片展示）────────────────────────────────────────────
         _Section(
           title: '拍摄参数',
           child: Padding(
@@ -126,7 +125,7 @@ class _RichInfoPanelState extends State<_RichInfoPanel> {
           ),
         ),
 
-        // ── Map placeholder ─────────────────────────────────────────────────
+        // ── 地图占位（可替换为真实地图组件）────────────────────────────────
         _Section(
           title: '拍摄地点',
           child: Padding(
@@ -151,7 +150,7 @@ class _RichInfoPanelState extends State<_RichInfoPanel> {
           ),
         ),
 
-        // ── Async extra info ────────────────────────────────────────────────
+        // ── 异步加载的扩展信息 ─────────────────────────────────────────────
         FutureBuilder<Map<String, dynamic>>(
           future: _asyncMeta,
           builder: (ctx, snap) {

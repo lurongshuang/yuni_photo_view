@@ -1,13 +1,11 @@
-/// YuniPhotoView — A Flutter viewer interaction framework.
+/// YuniPhotoView：Flutter 全屏媒体查看交互框架。
 ///
-/// This package provides the interaction shell for full-screen media viewing:
-/// paging, gestures, a slide-up info panel, and customisable overlays.
+/// 提供分页、手势、上滑信息面板与可自定义浮层等**壳层能力**。
 ///
-/// **The framework does NOT render any media content.**
-/// Images, videos, files, and any other content are supplied by the business
-/// application via [pageBuilder] and [infoBuilder] callbacks.
+/// **框架不渲染具体媒体内容**：图片、视频等由业务在 [ViewerPageBuilder]、
+/// [ViewerInfoBuilder] 等回调中自行构建。
 ///
-/// ## Quick start
+/// ## 快速开始
 ///
 /// ```dart
 /// import 'package:yuni_photo_view/yuni_photo_view.dart';
@@ -35,14 +33,14 @@
 /// ```
 library yuni_photo_view;
 
-// ── Core data model ───────────────────────────────────────────────────────────
+// ── 核心数据模型 ─────────────────────────────────────────────────────────────
 export 'src/core/viewer_item.dart' show ViewerItem;
 
-// ── Interaction configuration ─────────────────────────────────────────────────
+// ── 交互配置 ─────────────────────────────────────────────────────────────────
 export 'src/core/interaction_config.dart'
     show ViewerInteractionConfig, InfoSyncMode;
 
-// ── State & builder types ─────────────────────────────────────────────────────
+// ── 状态与 Builder 类型 ───────────────────────────────────────────────────────
 export 'src/core/viewer_state.dart'
     show
         InfoState,
@@ -52,24 +50,23 @@ export 'src/core/viewer_state.dart'
         ViewerPageBuilder,
         ViewerInfoBuilder,
         ViewerBarBuilder,
-        ViewerOverlayBuilder;
+        ViewerOverlayBuilder,
+        ViewerPageOverlayBuilder;
 
-// ── External controller ───────────────────────────────────────────────────────
+// ── 外部控制器 ───────────────────────────────────────────────────────────────
 export 'src/core/viewer_controller.dart' show MediaViewerController;
 
-// ── Theme ─────────────────────────────────────────────────────────────────────
+// ── 主题 ─────────────────────────────────────────────────────────────────────
 export 'src/core/viewer_theme.dart' show ViewerTheme;
 
-// ── Main widget ───────────────────────────────────────────────────────────────
+// ── 主组件 ───────────────────────────────────────────────────────────────────
 export 'src/viewer/media_viewer.dart' show MediaViewer;
 
-// ── Helper widgets ────────────────────────────────────────────────────────────
-/// Recommended frame for image / video content in [pageBuilder].
-/// Applies cover-scale-up for short content and top-align-clip for tall content,
-/// with a smooth centre→top alignment transition driven by [infoRevealProgress].
+// ── 辅助组件 ─────────────────────────────────────────────────────────────────
+/// 建议在 [ViewerPageBuilder] 中包裹图片/视频：矮内容放大铺满，高内容顶对齐裁剪，
+/// 并由 [ViewerPageContext.infoRevealProgress] 驱动居中→贴顶的平滑过渡。
 export 'src/widgets/viewer_media_cover_frame.dart' show ViewerMediaCoverFrame;
 
-/// Drop-in replacement for [Hero] inside [pageBuilder].
-/// Provides a smooth default flight-shuttle (BoxFit.cover + animated corner
-/// radius) and exposes [shuttleBuilder] for full customisation.
+/// 在 [pageBuilder] 中可替代原生 [Hero]：默认 flight shuttle 在缩略图 cover 与
+/// 查看区 contain 之间插值，并可通过 [ViewerHero.shuttleBuilder] 完全自定义。
 export 'src/widgets/viewer_hero.dart' show ViewerHero;

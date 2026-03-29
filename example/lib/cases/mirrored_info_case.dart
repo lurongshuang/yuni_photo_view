@@ -3,17 +3,11 @@ import 'package:yuni_photo_view/yuni_photo_view.dart';
 
 import '../utils/demo_data.dart';
 
-/// Case 8 — Mirrored info sync mode.
+/// 案例 8：Info 同步模式（perPage / mirrored）。
 ///
-/// Demonstrates:
-/// - [InfoSyncMode.mirrored]: when one page's info is opened, all pages
-///   remember the shown state. Swiping to another page keeps info open.
-/// - Toggle between perPage and mirrored to compare.
-///
-/// Note: in this release the controller's infoState reflects the current page.
-/// The mirrored sync is implemented by the business by listening to the
-/// controller's state and calling showInfo/hideInfo on page change.
-/// A future framework release will natively enforce mirrored behaviour.
+/// - [InfoSyncMode.mirrored]：某一页展开 Info 后，左右翻页仍保持展开（由配置 + 业务配合触发）。
+/// - 本示例在 [onPageChanged] 里根据控制器状态调用 [MediaViewerController.showInfo] 模拟该行为。
+/// - 说明：控制器的 `currentInfoState` 始终对应当前页；完整镜像策略可按业务继续扩展。
 class MirroredInfoCase extends StatefulWidget {
   const MirroredInfoCase({super.key});
 
@@ -60,8 +54,8 @@ class _MirroredInfoCaseState extends State<MirroredInfoCase> {
             ),
             ListTile(
               leading: const Icon(Icons.camera),
-              title: Text(
-                  '${meta['device'] ?? '-'}  ·  ${meta['lens'] ?? '-'}'),
+              title:
+                  Text('${meta['device'] ?? '-'}  ·  ${meta['lens'] ?? '-'}'),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
@@ -90,8 +84,7 @@ class _MirroredInfoCaseState extends State<MirroredInfoCase> {
                 backgroundColor: Colors.deepPurple,
                 label: Text(
                   _syncMode == InfoSyncMode.perPage ? 'perPage' : 'mirrored',
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 12),
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
                 ),
               ),
               const SizedBox(width: 8),
@@ -100,8 +93,7 @@ class _MirroredInfoCaseState extends State<MirroredInfoCase> {
         ),
       ),
       onPageChanged: (index) {
-        // When mirrored mode is active, show info on every page that info was
-        // already open on. The business drives this via the controller.
+        // 镜像模式且当前应为展开时：翻页后再调用一次 showInfo，避免新页被收成收起态。
         if (_syncMode == InfoSyncMode.mirrored &&
             _controller.currentInfoState == InfoState.shown) {
           _controller.showInfo();

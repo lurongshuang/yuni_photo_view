@@ -1,6 +1,8 @@
+// YuniPhotoView 示例应用：入口为案例列表，点选进入各演示页。
 import 'package:flutter/material.dart';
 
 import 'cases/basic_case.dart';
+import 'cases/comprehensive_case.dart';
 import 'cases/custom_info_case.dart';
 import 'cases/damping_case.dart';
 import 'cases/full_custom_bar_case.dart';
@@ -30,12 +32,18 @@ class ExampleApp extends StatelessWidget {
   }
 }
 
+/// 主列表：展示各案例标题与说明，导航到对应演示界面。
 class _CaseListPage extends StatelessWidget {
   const _CaseListPage();
 
   @override
   Widget build(BuildContext context) {
     final cases = <_CaseEntry>[
+      _CaseEntry(
+        title: '0. 综合案例',
+        subtitle: 'Live 样式 + 长按/按钮播视频 + 顶底栏 + 上滑原图模拟',
+        builder: (_) => const ComprehensiveCase(),
+      ),
       _CaseEntry(
         title: '1. 基础用法',
         subtitle: '图片列表 + 默认 info + 默认顶栏',
@@ -94,7 +102,8 @@ class _CaseListPage extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w600)),
             subtitle: Text(c.subtitle),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(ctx, MaterialPageRoute(builder: c.builder)),
+            onTap: () =>
+                Navigator.push(ctx, MaterialPageRoute(builder: c.builder)),
           );
         },
       ),
@@ -102,6 +111,7 @@ class _CaseListPage extends StatelessWidget {
   }
 }
 
+/// 列表中一条案例的标题、副标题与跳转构建器。
 class _CaseEntry {
   const _CaseEntry({
     required this.title,

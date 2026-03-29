@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// Visual tokens and animation parameters for the viewer.
+/// 查看器视觉与动画参数。
 ///
-/// Pass a customised [ViewerTheme] to [MediaViewer] to override defaults.
+/// 通过 [MediaViewer.theme] 传入以覆盖默认。
 class ViewerTheme {
   const ViewerTheme({
     this.backgroundColor = Colors.black,
@@ -20,60 +20,57 @@ class ViewerTheme {
     this.dismissSnapBackCurve = Curves.easeOutCubic,
   });
 
-  // ── Background & backdrop ─────────────────────────────────────────────────
+  // ── 背景 ───────────────────────────────────────────────────────────────────
 
-  /// Background colour of the viewer.
-  /// Fades to transparent during dismiss drag so the previous page shows through.
+  /// 查看器背景色；下拉关闭时透明度升高，便于透出下层路由。
   final Color backgroundColor;
 
-  // ── Info sheet ────────────────────────────────────────────────────────────
+  // ── 信息面板 ───────────────────────────────────────────────────────────────
 
-  /// Background colour of the info sheet.
-  /// Defaults to [backgroundColor] with reduced opacity when null.
+  /// 信息面板背景色；为 null 时使用 [effectiveInfoBackground] 回退逻辑。
   final Color? infoBackgroundColor;
 
-  /// Border radius applied to the top edge of the info sheet.
+  /// 信息面板顶部圆角。
   final BorderRadius infoBorderRadius;
 
-  /// Colour of the drag handle pill.
+  /// 顶部拖动条颜色。
   final Color? dragHandleColor;
 
-  /// Width and height of the drag handle pill.
+  /// 拖动条宽高。
   final Size dragHandleSize;
 
-  // ── Animation durations ───────────────────────────────────────────────────
+  // ── 动画时长 ───────────────────────────────────────────────────────────────
 
-  /// Duration for the info panel slide-up reveal animation.
+  /// 信息面板展开动画时长。
   final Duration infoShowDuration;
 
-  /// Duration for the info panel slide-down hide animation.
+  /// 信息面板收起动画时长。
   final Duration infoHideDuration;
 
-  /// Duration for snapping back after a cancelled dismiss drag.
+  /// 未达关闭阈值时下拉回弹动画时长。
   final Duration dismissSnapBackDuration;
 
-  // ── Animation curves ──────────────────────────────────────────────────────
+  // ── 动画曲线 ───────────────────────────────────────────────────────────────
 
-  /// Easing curve for info panel show animation.
+  /// 信息面板展开曲线。
   final Curve infoShowCurve;
 
-  /// Easing curve for info panel hide animation.
+  /// 信息面板收起曲线。
   final Curve infoHideCurve;
 
-  /// Easing curve for dismiss snap-back animation.
+  /// 下拉回弹曲线。
   final Curve dismissSnapBackCurve;
 
-  // ── Derived helpers ───────────────────────────────────────────────────────
+  // ── 派生色 ─────────────────────────────────────────────────────────────────
 
-  /// Effective info background — falls back to a semi-transparent version of
-  /// [backgroundColor] when not explicitly set.
+  /// 实际使用的信息面板背景：若未指定 [infoBackgroundColor] 则用主题 `surface`。
   Color effectiveInfoBackground(BuildContext context) {
     if (infoBackgroundColor != null) return infoBackgroundColor!;
-    // Use the system's surface colour so the sheet fits Material themes.
     final surface = Theme.of(context).colorScheme.surface;
     return surface;
   }
 
+  /// 拖动条实际颜色。
   Color effectiveDragHandleColor(BuildContext context) {
     return dragHandleColor ??
         Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3);

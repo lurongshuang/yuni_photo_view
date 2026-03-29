@@ -3,12 +3,10 @@ import 'package:yuni_photo_view/yuni_photo_view.dart';
 
 import '../utils/demo_data.dart';
 
-/// Case 7 — Real-time damping tuning.
+/// 案例 7：阻尼参数实时调试。
 ///
-/// Demonstrates:
-/// - Three sliders that update all three damping coefficients in real time.
-/// - Viewer is opened with the current values each time.
-/// - Great for understanding how damping feels.
+/// - 三个滑块分别对应上拉信息、下拉恢复、下拉关闭三类阻尼。
+/// - 每次打开查看器时使用当前滑块数值，便于对比手感。
 class DampingCase extends StatefulWidget {
   const DampingCase({super.key});
 

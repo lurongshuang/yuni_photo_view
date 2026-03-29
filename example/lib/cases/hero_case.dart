@@ -3,15 +3,11 @@ import 'package:yuni_photo_view/yuni_photo_view.dart';
 
 import '../utils/demo_data.dart';
 
-/// Case 6 — Hero 动画。
+/// 案例 6：Hero 共享元素动画。
 ///
-/// 演示：
-/// - 从缩略图网格到浏览器的共享元素 Hero 动画。
-/// - 使用 [ViewerHero] 代替原生 [Hero]，消除飞入/飞出闪烁：
-///   • push 开始：shuttle 与缩略图外观完全一致（cover + 圆角 8px）。
-///   • push 结束：shuttle 与 ViewerMediaCoverFrame 外观完全一致（contain + 无圆角）。
-///   • pop 开始：与 viewer 外观一致；pop 结束：与缩略图一致。
-///   • 拖拽返回松手触发 pop 前，已将 dismiss offset 归零，Hero 从正确坐标起飞。
+/// - 列表缩略图与查看页使用相同 `tag`，配合 [ViewerHero] 做过渡。
+/// - [ViewerHero] 默认 shuttle 在缩略图 cover+圆角 与查看区 contain 之间插值，减轻闪烁与比例跳变。
+/// - 下拉关闭时 Hero 从当前拖动位置衔接回程（勿在 pop 前强行把位移清零）。
 class HeroCase extends StatelessWidget {
   const HeroCase({super.key});
 
@@ -61,8 +57,8 @@ class HeroCase extends StatelessWidget {
       pageBuilder: (ctx, pageCtx) {
         final url = pageCtx.item.payload as String;
 
-        // 使用 ViewerHero 代替原生 Hero。
-        // thumbnailCornerRadius 与网格侧 ClipRRect radius 保持一致（均为 8）。
+        // 使用 ViewerHero 替代原生 Hero，减轻 cover/contain 切换时的闪烁。
+        // thumbnailCornerRadius 必须与列表缩略图的 ClipRRect 圆角一致（本例为 8）。
         return ViewerHero(
           tag: 'hero_${pageCtx.item.id}',
           imageUrl: url,

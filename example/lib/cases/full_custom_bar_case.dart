@@ -3,23 +3,13 @@ import 'package:yuni_photo_view/yuni_photo_view.dart';
 
 import '../utils/demo_data.dart';
 
-/// Case 5 — 全自定义 top/bottom 栏 + Overlay，演示新上下文字段。
+/// 案例 5：全自定义顶栏、底栏与全屏 Overlay，演示 [ViewerBarContext] 各字段。
 ///
-/// **测试维度**
-/// 1. [ViewerBarContext.barsVisible]
-///    • TopBar: 标题在全屏时变为半透明（内容变化，框架的 AnimatedOpacity 负责整体淡出）
-///    • OverlayBuilder: bars 隐藏时右下角出现 "点击屏幕恢复" 提示，bars 显示时消失
-///
-/// 2. [ViewerBarContext.infoRevealProgress]  ← 实时连续值，随 info 上拉更新
-///    • BottomBar（胶片条）随 info 上拉平滑淡出（progress 0→0.4 → opacity 1→0）
-///    • TopBar 渐变蒙层高度随 info 上拉收缩（不遮住 info 面板上边缘）
-///    • OverlayBuilder 中的页码角标随 info 上拉上移（跟 info 面板保持间距）
-///
-/// 3. [ViewerBarContext.dismissProgress]
-///    • OverlayBuilder 中的调试状态条随 dismiss 拖动实时更新
-///
-/// 4. [ViewerBarContext.infoState] (enum 二值)
-///    • TopBar 标题在 info shown 时显示相册名称（而不是图片标题）
+/// 测试要点：
+/// 1. [ViewerBarContext.barsVisible]：顶栏标题在全屏时略变淡；Overlay 在栏隐藏时提示「点击屏幕恢复」。
+/// 2. [ViewerBarContext.infoRevealProgress]：底栏胶片条随上拉淡出；顶栏渐变高度收缩；Overlay 调试条位置上移。
+/// 3. [ViewerBarContext.dismissProgress]：Overlay 中展示下拉关闭进度。
+/// 4. [ViewerBarContext.infoState]：信息展开时顶栏标题切换为相册名（与单图标题区分）。
 class FullCustomBarCase extends StatefulWidget {
   const FullCustomBarCase({super.key});
 
@@ -68,14 +58,14 @@ class _FullCustomBarCaseState extends State<FullCustomBarCase> {
           const SnackBar(content: Text('分享 (演示)')),
         ),
       ),
-      // 胶片条：随 infoRevealProgress 平滑淡出
+      // 底栏胶片条：随信息面板上拉进度淡出。
       bottomBarBuilder: (ctx, barCtx) => _FilmstripBar(
         items: DemoData.images,
         currentIndex: barCtx.index,
         infoRevealProgress: barCtx.infoRevealProgress,
         onTap: (i) => _controller.jumpToPage(i),
       ),
-      // Overlay：演示 barsVisible、infoRevealProgress、dismissProgress
+      // 全屏 Overlay：演示栏可见性、信息展开进度、下拉关闭进度。
       overlayBuilder: (ctx, barCtx) => _StateOverlay(barCtx: barCtx),
     );
   }
@@ -109,10 +99,8 @@ class _FullCustomBarCaseState extends State<FullCustomBarCase> {
 
 // ── 自适应顶栏 ─────────────────────────────────────────────────────────────────
 //
-// 演示维度：
-//   • barsVisible      → 全屏时标题文字变为半透明（即将被框架淡出，内容先变化）
-//   • infoRevealProgress → 渐变蒙层高度随 info 上拉从 100px 缩到 60px
-//   • infoState        → info shown 时显示 "相册" 而非图片标题
+// 说明：barsVisible 控制标题浓淡；infoRevealProgress 控制渐变条高度；
+// infoState 为已展开时标题改为相册文案。
 
 class _AdaptiveTopBar extends StatelessWidget {
   const _AdaptiveTopBar({
@@ -133,13 +121,13 @@ class _AdaptiveTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 渐变高度随 info 上拉从 100 → 60 收缩（避免视觉上压盖 info 顶部内容）
+    // 渐变条高度随信息面板上拉从 100 收到 60，减轻压住面板顶部内容的观感。
     final gradientH = 100.0 - (barCtx.infoRevealProgress.clamp(0.0, 1.0) * 40);
 
-    // 全屏时标题变半透明（提示用户 bars 将消失）
+    // 全屏隐藏栏时标题先变淡（与框架淡出栏呼应）。
     final titleOpacity = barCtx.barsVisible ? 1.0 : 0.4;
 
-    // info shown 时显示相册名而非图片标题
+    // 信息已展开时显示相册名，而非当前图标题。
     final title = barCtx.infoState == InfoState.shown
         ? '2026年3月 旅行'
         : (barCtx.item.meta?['title'] ?? '');
@@ -205,10 +193,7 @@ class _AdaptiveTopBar extends StatelessWidget {
 
 // ── 胶片条底栏 ─────────────────────────────────────────────────────────────────
 //
-// 演示维度：
-//   • infoRevealProgress → progress 0→0.4 时 opacity 1→0，info 显示后完全消失
-//   框架的 AnimatedOpacity (barsVisible) 叠加在外层；
-//   这里内部再做一层随 info 变化的淡出，两者相乘。
+// 说明：上拉进度约 0→0.4 时胶片条从不透明到透明；外层还有框架随顶底栏可见性变化的透明度动画，二者相乘。
 
 class _FilmstripBar extends StatelessWidget {
   const _FilmstripBar({
@@ -225,7 +210,7 @@ class _FilmstripBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // info 上拉 0→40% 时胶片条从完全可见到完全透明
+    // 信息面板上拉进度约 0～40% 时，胶片条由完全不透明过渡到全透明。
     final opacity = (1.0 - infoRevealProgress / 0.4).clamp(0.0, 1.0);
 
     return Opacity(
@@ -247,8 +232,7 @@ class _FilmstripBar extends StatelessWidget {
               height: 72,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 itemCount: items.length,
                 itemBuilder: (ctx, i) {
                   final selected = i == currentIndex;
@@ -261,8 +245,7 @@ class _FilmstripBar extends StatelessWidget {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color:
-                              selected ? Colors.white : Colors.transparent,
+                          color: selected ? Colors.white : Colors.transparent,
                           width: 2,
                         ),
                       ),
@@ -285,14 +268,11 @@ class _FilmstripBar extends StatelessWidget {
   }
 }
 
-// ── 状态 Overlay ──────────────────────────────────────────────────────────────
+// ── 全屏状态浮层 ─────────────────────────────────────────────────────────────
 //
-// Overlay 不被框架的 AnimatedOpacity 包裹，需要自己管理可见性。
+// 本层不受框架对顶底栏的 AnimatedOpacity 控制，显隐需自行实现。
 //
-// 演示维度：
-//   • barsVisible=false  → 右下角出现 "点击恢复" 提示（全屏提示）
-//   • infoRevealProgress → 调试状态条平滑更新（实时连续值展示）
-//   • dismissProgress    → dismiss 进度实时展示
+// 演示：栏隐藏时右下角提示；左下角调试条随信息进度与下拉关闭进度更新。
 
 class _StateOverlay extends StatelessWidget {
   const _StateOverlay({required this.barCtx});
@@ -303,22 +283,22 @@ class _StateOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // ── 全屏提示（barsVisible = false 时出现）────────────────────────
+        // 全屏时（顶底栏隐藏）显示的恢复提示。
         AnimatedPositioned(
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOutCubic,
           right: 16,
-          // bars 隐藏时提示从屏幕外滑入，否则滑到屏幕外
+          // 栏隐藏时提示移入可视区；栏显示时移到屏外。
           bottom: barCtx.barsVisible ? -64 : 80,
           child: _FullscreenHint(
             visible: !barCtx.barsVisible,
           ),
         ),
 
-        // ── 实时状态调试条（左下角，info 上拉时随之向上偏移）─────────────
+        // 左下角调试条：随信息面板上移以免被遮挡。
         Positioned(
           left: 12,
-          // 随 info 上拉同步上移，避免被 info 面板遮挡
+          // 与信息面板高度联动上移。
           bottom: 12 +
               MediaQuery.of(context).size.height *
                   0.48 *
@@ -330,7 +310,7 @@ class _StateOverlay extends StatelessWidget {
   }
 }
 
-// ── 全屏提示 Widget ───────────────────────────────────────────────────────────
+// ── 全屏提示组件 ─────────────────────────────────────────────────────────────
 
 class _FullscreenHint extends StatelessWidget {
   const _FullscreenHint({required this.visible});
@@ -364,7 +344,7 @@ class _FullscreenHint extends StatelessWidget {
   }
 }
 
-// ── 实时状态调试角标 ───────────────────────────────────────────────────────────
+// ── 实时状态调试角标 ─────────────────────────────────────────────────────────
 
 class _DebugStatusBadge extends StatelessWidget {
   const _DebugStatusBadge({required this.barCtx});
@@ -388,7 +368,7 @@ class _DebugStatusBadge extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // info 进度 —— 彩色进度条
+            // 信息面板上拉进度（示意条）
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -401,7 +381,7 @@ class _DebugStatusBadge extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 3),
-            // dismiss 进度
+            // 下拉关闭进度
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -414,7 +394,7 @@ class _DebugStatusBadge extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 3),
-            // bars 可见 + infoState
+            // 顶底栏是否可见 + 信息展开枚举状态
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -462,7 +442,7 @@ class _MiniBar extends StatelessWidget {
   }
 }
 
-// ── Info 面板 ─────────────────────────────────────────────────────────────────
+// ── 信息面板内容 ─────────────────────────────────────────────────────────────
 
 class _InfoPanel extends StatelessWidget {
   const _InfoPanel({required this.meta});

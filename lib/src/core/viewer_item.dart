@@ -1,7 +1,6 @@
-/// A single item in the viewer.
+/// 查看器中的一条数据项。
 ///
-/// The framework only carries business data here.
-/// All content rendering is delegated to [pageBuilder].
+/// 框架只承载业务数据，具体画面全部由 [ViewerPageBuilder] 渲染。
 class ViewerItem {
   const ViewerItem({
     required this.id,
@@ -12,24 +11,22 @@ class ViewerItem {
     this.hasInfo = true,
   });
 
-  /// Unique identifier for this item.
+  /// 唯一标识。
   final String id;
 
-  /// Optional type hint ('image', 'video', 'file', etc.).
-  /// Purely informational — the framework never inspects this.
+  /// 可选类型提示（如 `image`、`video`、`file`），仅供业务使用，框架不解析。
   final String? kind;
 
-  /// Any business-specific data (url, file path, model, etc.).
+  /// 业务自定义载荷（URL、路径、模型等）。
   final dynamic payload;
 
-  /// Key/value metadata (EXIF, size, date, …).
+  /// 键值元数据（如 EXIF、尺寸、日期）。
   final Map<String, dynamic>? meta;
 
-  /// Arbitrary extra data passed through to builders.
+  /// 任意扩展字段，原样传给各 Builder。
   final dynamic extra;
 
-  /// Whether this item supports the info sheet gesture.
-  /// When [false], the info panel is hidden and its gesture is disabled.
+  /// 是否支持上滑信息面板。为 `false` 时该页隐藏面板并关闭对应手势。
   final bool hasInfo;
 
   ViewerItem copyWith({

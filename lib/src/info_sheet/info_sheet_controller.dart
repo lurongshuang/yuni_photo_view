@@ -6,14 +6,12 @@ import '../core/interaction_config.dart';
 import '../core/viewer_state.dart';
 import '../core/viewer_theme.dart';
 
-/// Per-page info sheet state controller.
+/// 每一页独立持有的信息面板控制器。
 ///
-/// Manages the two-state (hidden / shown) lifecycle:
-/// - Drag tracking with configurable damping.
-/// - Settle on release: distance + velocity threshold decides the target anchor.
-/// - No intermediate state — always snaps to an anchor (0, defaultShown, maxShown).
-/// - Content height measurement to determine [maxShownHeight].
-/// - Opacity animation for the "slide-up + fade-in" compound effect.
+/// - 二态：隐藏 / 展开（含默认高度与可继续上拉的最大高度）。
+/// - 拖动带阻尼；松手按距离+速度阈值吸附到锚点。
+/// - 可测量内容高度以计算 [maxShownHeight]。
+/// - 内容上拉时配合透明度实现「升起+渐显」。
 class InfoSheetController extends ChangeNotifier {
   InfoSheetController({
     required TickerProvider vsync,
@@ -29,7 +27,7 @@ class InfoSheetController extends ChangeNotifier {
 
   late final AnimationController _animController;
 
-  // ── Layout dimensions ─────────────────────────────────────────────────────
+  // ── 布局尺寸 ─────────────────────────────────────────────────────────────
 
   double _screenHeight = 0;
   double _measuredContentHeight = 0;
@@ -38,25 +36,24 @@ class InfoSheetController extends ChangeNotifier {
   void setScreenHeight(double h) {
     if (_screenHeight == h) return;
     _screenHeight = h;
-    // Re-clamp if already shown
+    // 已在展开态时若最大高度变小，需重新夹紧当前高度。
     if (_state == InfoState.shown && _sheetHeight > maxShownHeight) {
       _sheetHeight = maxShownHeight;
       notifyListeners();
     }
   }
 
-  /// Called once the info content has been laid out and its height is known.
+  /// 信息区内业务内容布局完成后回调，用于更新可展开的最大高度。
   void setMeasuredContentHeight(double h) {
     final clamped = h + _dragHandleRegionHeight;
     if ((clamped - _measuredContentHeight).abs() < 1) return;
     _measuredContentHeight = clamped;
-    // If info is shown, update max without jumping the current position.
     notifyListeners();
   }
 
   double get defaultShownHeight => _screenHeight * config.defaultShownExtent;
 
-  /// Maximum height the sheet can reach — bounded by content + screen limits.
+  /// 面板可达的最大高度：受屏幕与内容高度共同限制。
   double get maxShownHeight {
     if (_measuredContentHeight <= 0) return defaultShownHeight;
     return math.min(
@@ -65,17 +62,17 @@ class InfoSheetController extends ChangeNotifier {
     );
   }
 
-  // ── Live state ────────────────────────────────────────────────────────────
+  // ── 运行时状态 ───────────────────────────────────────────────────────────
 
   InfoState _state = InfoState.hidden;
   double _sheetHeight = 0;
 
-  // Animation interpolation
+  // 动画插值用
   double _animFrom = 0;
   double _animTo = 0;
   bool _animIsShow = false;
 
-  // Drag state
+  // 拖动
   bool _isDragging = false;
   double _dragStartHeight = 0;
 
@@ -83,13 +80,13 @@ class InfoSheetController extends ChangeNotifier {
 
   double get sheetHeight => _sheetHeight;
 
-  /// 0.0 = fully hidden → 1.0 = at default half-screen → >1.0 = expanded.
+  /// 相对默认高度的比例：0 完全收起，1 恰为默认半屏，可大于 1。
   double get revealProgress {
     if (defaultShownHeight <= 0) return 0;
     return _sheetHeight / defaultShownHeight;
   }
 
-  /// Opacity for the info content: fades in as the sheet rises.
+  /// 信息区内文字等的透明度，随高度上升渐显。
   double get contentOpacity {
     if (_sheetHeight <= 0) return 0.0;
     final fadeRange = defaultShownHeight * 0.35;
@@ -98,7 +95,7 @@ class InfoSheetController extends ChangeNotifier {
 
   bool get isDragging => _isDragging;
 
-  // ── Animation ─────────────────────────────────────────────────────────────
+  // ── 动画 tick ────────────────────────────────────────────────────────────
 
   void _onAnimTick() {
     final curve = _animIsShow ? theme.infoShowCurve : theme.infoHideCurve;
@@ -119,7 +116,7 @@ class InfoSheetController extends ChangeNotifier {
     );
   }
 
-  // ── Drag API ──────────────────────────────────────────────────────────────
+  // ── 拖动 API ───────────────────────────────────────────────────────────────
 
   void startDrag() {
     _isDragging = true;
@@ -127,42 +124,39 @@ class InfoSheetController extends ChangeNotifier {
     _animController.stop();
   }
 
-  /// [deltaY] positive = finger moved downward (collapse),
-  ///          negative = finger moved upward (expand).
+  /// [deltaY]：手指向下为正（压低面板），向上为负（拉高面板）。
   void updateDrag(double deltaY) {
     if (!_isDragging) return;
 
     if (deltaY < 0) {
-      // Expanding upward.
+      // 向上展开
       final upDelta = -deltaY * config.infoDragUpDamping;
       _sheetHeight = math.min(maxShownHeight, _sheetHeight + upDelta);
     } else {
-      // Collapsing downward.
+      // 向下收回
       final downDelta = deltaY * config.infoRestoreDownDamping;
       _sheetHeight = math.max(0, _sheetHeight - downDelta);
     }
     notifyListeners();
   }
 
-  /// [velocityY] positive = downward fling, negative = upward fling.
+  /// [velocityY]：向下甩为正，向上甩为负。
   void endDrag(double velocityY) {
     _isDragging = false;
     _settle(velocityY);
   }
 
-  // ── Settle logic ──────────────────────────────────────────────────────────
+  // ── 松手吸附逻辑 ──────────────────────────────────────────────────────────
 
   void _settle(double velocityY) {
     final double target;
 
     if (_state == InfoState.hidden) {
-      // Was revealing → decide show or stay hidden.
-      final shouldShow =
-          _sheetHeight > config.infoShowDistanceThreshold ||
+      // 从隐藏态上拉：决定展开还是回到 0。
+      final shouldShow = _sheetHeight > config.infoShowDistanceThreshold ||
           velocityY < -config.infoShowVelocityThreshold;
 
       if (shouldShow) {
-        // Snap to nearest anchor: default or max.
         target = _pickShowTarget();
         _state = InfoState.shown;
       } else {
@@ -170,16 +164,15 @@ class InfoSheetController extends ChangeNotifier {
         _state = InfoState.hidden;
       }
     } else {
-      // Was collapsing (or expanding further) from shown state.
-      final shouldHide =
-          _sheetHeight < (_dragStartHeight - config.infoHideDistanceThreshold) ||
+      // 从展开态：决定收起还是吸附到某一展开高度。
+      final shouldHide = _sheetHeight <
+              (_dragStartHeight - config.infoHideDistanceThreshold) ||
           velocityY > config.infoHideVelocityThreshold;
 
       if (shouldHide) {
         target = 0;
         _state = InfoState.hidden;
       } else {
-        // Snap to nearest anchor.
         target = _pickShowTarget();
         _state = InfoState.shown;
       }
@@ -189,14 +182,14 @@ class InfoSheetController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Picks the appropriate shown anchor based on current height.
+  /// 在「默认高度」与「最大内容高度」两锚点间择近吸附。
   double _pickShowTarget() {
     if (maxShownHeight <= defaultShownHeight) return defaultShownHeight;
     final mid = (defaultShownHeight + maxShownHeight) / 2;
     return _sheetHeight >= mid ? maxShownHeight : defaultShownHeight;
   }
 
-  // ── Imperative API ────────────────────────────────────────────────────────
+  // ── 命令式 API ────────────────────────────────────────────────────────────
 
   void show({bool animated = true}) {
     _state = InfoState.shown;
@@ -228,7 +221,7 @@ class InfoSheetController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Dispose ───────────────────────────────────────────────────────────────
+  // ── 释放 ─────────────────────────────────────────────────────────────────
 
   @override
   void dispose() {

@@ -3,16 +3,14 @@ import 'package:yuni_photo_view/yuni_photo_view.dart';
 
 import '../utils/demo_data.dart';
 
-/// Case 4 — Mixed items: some have info, some do not.
+/// 案例 4：混合列表（部分条目无 Info）。
 ///
-/// Demonstrates:
-/// - [ViewerItem.hasInfo] = false → info gesture disabled for that page.
-/// - A badge on the thumbnail shows whether info is available.
-/// - The last item (img_6) always has hasInfo=false; others have it.
+/// - [ViewerItem.hasInfo] 为 false 时，该页上滑信息手势由框架关闭。
+/// - 缩略图角标区分是否有 Info；其中 img_6 固定为无 Info。
 class NoInfoCase extends StatelessWidget {
   const NoInfoCase({super.key});
 
-  // Use the original list which includes a no-info item.
+  // 使用含「无 Info」条目的原始列表。
   List<ViewerItem> get _items => DemoData.images;
 
   @override
@@ -93,8 +91,7 @@ class NoInfoCase extends StatelessWidget {
         ],
       ),
       infoBuilder: (ctx, pageCtx) {
-        // The framework already disables the info gesture when hasInfo=false.
-        // This builder is only called for items where hasInfo=true.
+        // hasInfo==false 时框架不会上拉 Info，本 builder 仅在 hasInfo==true 的页被调用。
         final meta = pageCtx.item.meta ?? {};
         return Padding(
           padding: const EdgeInsets.all(16),
@@ -107,14 +104,14 @@ class NoInfoCase extends StatelessWidget {
                         fontSize: 18, fontWeight: FontWeight.bold)),
               if (meta['date'] != null) ...[
                 const SizedBox(height: 8),
-                Text(meta['date']!,
-                    style: const TextStyle(color: Colors.grey)),
+                Text(meta['date']!, style: const TextStyle(color: Colors.grey)),
               ],
               if (meta['location'] != null) ...[
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    const Icon(Icons.place_outlined, size: 16, color: Colors.grey),
+                    const Icon(Icons.place_outlined,
+                        size: 16, color: Colors.grey),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(meta['location']!,
@@ -139,8 +136,7 @@ class NoInfoCase extends StatelessWidget {
               ),
               const Spacer(),
               if (!barCtx.item.hasInfo)
-                const Icon(Icons.info_outline,
-                    color: Colors.white38, size: 20),
+                const Icon(Icons.info_outline, color: Colors.white38, size: 20),
             ],
           ),
         ),

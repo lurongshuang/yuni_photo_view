@@ -18,12 +18,12 @@ import 'package:flutter/material.dart';
 /// 飞行过程中只对 scale 做线性插值，图片始终居中。
 /// scale 值是单调的，不会出现中间放大。
 ///
-/// | 时刻 | animation.value | scale | 效果 |
-/// |------|----------------|-------|------|
-/// | push 开始 | 0.0 | thumbCoverScale | 填满缩略图 = cover ✓ |
-/// | push 结束 | 1.0 | viewContainScale | 居中 contain ✓ |
-/// | pop  开始 | 1.0 | viewContainScale | 居中 contain = viewer ✓ |
-/// | pop  结束 | 0.0 | thumbCoverScale | 填满缩略图 = cover ✓ |
+/// | 阶段 | 动画值 | 缩放 | 效果 |
+/// |------|--------|------|------|
+/// | 进入开始 | 0.0 | thumbCoverScale | 与缩略图 cover 一致 |
+/// | 进入结束 | 1.0 | viewContainScale | 与查看区 contain 一致 |
+/// | 返回开始 | 1.0 | viewContainScale | 与查看区一致 |
+/// | 返回结束 | 0.0 | thumbCoverScale | 与缩略图 cover 一致 |
 ///
 /// ## 用法
 ///
@@ -60,7 +60,7 @@ class ViewerHero extends StatelessWidget {
   /// Hero 标签，与列表/网格侧的 Hero tag 保持一致。
   final Object tag;
 
-  /// viewer 内正常展示的内容（通常是 [ViewerMediaCoverFrame] 包裹图片）。
+  /// 查看页内正常展示的内容（多为 [ViewerMediaCoverFrame] 包一层图片）。
   final Widget child;
 
   /// 图片网络地址。飞行期间直接从已有缓存读取，无需重新加载。
@@ -137,7 +137,7 @@ class _HeroShuttleWidget extends StatefulWidget {
   /// 缩略图端的布局尺寸（用于计算 cover scale 锚点）。
   final Size thumbSize;
 
-  /// viewer 端的布局尺寸（用于计算 contain scale 锚点）。
+  /// 查看区一端的布局尺寸（用于计算 contain 缩放锚点）。
   final Size viewerSize;
 
   @override
@@ -166,7 +166,8 @@ class _HeroShuttleWidgetState extends State<_HeroShuttleWidget> {
 
     // 尝试同步获取（ImageStreamCompleter 已完成时会同步回调）
     ui.Image? syncImage;
-    final syncListener = ImageStreamListener((info, _) => syncImage = info.image);
+    final syncListener =
+        ImageStreamListener((info, _) => syncImage = info.image);
     stream.addListener(syncListener);
     stream.removeListener(syncListener);
 

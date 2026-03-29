@@ -3,9 +3,9 @@ import 'package:flutter/services.dart';
 
 import 'yuni_photo_view_platform_interface.dart';
 
-/// An implementation of [YuniPhotoViewPlatform] that uses method channels.
+/// 通过 MethodChannel 与原生通信的 [YuniPhotoViewPlatform] 实现。
 class MethodChannelYuniPhotoView extends YuniPhotoViewPlatform {
-  /// The method channel used to interact with the native platform.
+  /// 与原生侧约定的通道名。
   @visibleForTesting
   final methodChannel = const MethodChannel('yuni_photo_view');
 

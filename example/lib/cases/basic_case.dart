@@ -3,11 +3,9 @@ import 'package:yuni_photo_view/yuni_photo_view.dart';
 
 import '../utils/demo_data.dart';
 
-/// Case 1 — Basic usage.
+/// 案例 1：基础用法。
 ///
-/// - Grid of images as the entry point.
-/// - Default info sheet with EXIF metadata.
-/// - Simple top bar (back button + title).
+/// - 网格进入大图；默认上滑信息面板（EXIF 风格元数据）；简单顶栏（关闭 + 标题）。
 class BasicCase extends StatelessWidget {
   const BasicCase({super.key});
 
@@ -44,15 +42,13 @@ class BasicCase extends StatelessWidget {
 
   Widget _buildPage(BuildContext context, ViewerPageContext pageCtx) {
     final url = pageCtx.item.payload as String;
-    // ViewerMediaCoverFrame handles:
-    //   • Short/landscape content → scale UP to cover the viewport (no gaps).
-    //   • Tall/portrait content   → top-align and clip at bottom (no downscale).
-    //   • Smooth alignment transition: centre → topCenter as info reveals.
+    // ViewerMediaCoverFrame：矮图/横图放大铺满不留边；高图顶对齐底部裁剪；
+    // Info 上滑时对齐从居中平滑过渡到贴顶。
     return ViewerMediaCoverFrame(
       revealProgress: pageCtx.infoRevealProgress,
       child: Image.network(
         url,
-        // No explicit BoxFit — ViewerMediaCoverFrame owns the scale decision.
+        // 不显式写 BoxFit，缩放策略由 ViewerMediaCoverFrame 统一处理。
         loadingBuilder: (_, child, progress) {
           if (progress == null) return child;
           return SizedBox(
@@ -113,7 +109,7 @@ class BasicCase extends StatelessWidget {
   }
 }
 
-// ── Shared info panel ─────────────────────────────────────────────────────────
+// ── 默认风格 Info 面板 ───────────────────────────────────────────────────────
 
 class _DefaultInfoPanel extends StatelessWidget {
   const _DefaultInfoPanel({required this.meta});
@@ -203,7 +199,7 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// ── Grid thumbnail ─────────────────────────────────────────────────────────────
+// ── 网格缩略图 ───────────────────────────────────────────────────────────────
 
 class _GridThumb extends StatelessWidget {
   const _GridThumb({required this.item, required this.onTap});
@@ -220,8 +216,7 @@ class _GridThumb extends StatelessWidget {
         child: Image.network(
           item.payload as String,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) =>
-              const ColoredBox(color: Colors.grey),
+          errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.grey),
         ),
       ),
     );

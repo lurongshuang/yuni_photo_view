@@ -1,17 +1,15 @@
-/// Controls whether the info state is mirrored across pages or per-page.
+/// 左右翻页时，各页信息面板状态如何记忆。
 enum InfoSyncMode {
-  /// Each page remembers its own info expand ratio and scroll offset.
-  /// Default.
+  /// 每页独立记忆展开高度等（默认）。
   perPage,
 
-  /// All pages share the same shown/hidden state and expand ratio.
+  /// 多页共享同一套展开比例（需业务配合 [MediaViewerController] 等实现镜像行为）。
   mirrored,
 }
 
-/// All physics & threshold parameters that govern the viewer's interactions.
+/// 查看器交互相关的阻尼、阈值与开关。
 ///
-/// Every parameter has a sensible default. Pass a customised instance to
-/// [MediaViewer] to fine-tune feel.
+/// 各字段均有合理默认值；传入自定义实例给 [MediaViewer] 即可微调手感。
 class ViewerInteractionConfig {
   const ViewerInteractionConfig({
     this.infoDragUpDamping = 0.88,
@@ -35,86 +33,77 @@ class ViewerInteractionConfig {
     this.enableSystemUiToggle = true,
   });
 
-  // ── Damping ────────────────────────────────────────────────────────────────
+  // ── 阻尼（0～1，越大越「拖不动」）────────────────────────────────────────
 
-  /// Resistance when dragging the info sheet upward (0..1).
-  /// Higher values = more resistance.
+  /// 手指向上拖、拉高信息面板时的阻尼。
   final double infoDragUpDamping;
 
-  /// Resistance when dragging the info sheet downward to restore (0..1).
+  /// 手指向下拖、压低/收起信息面板时的阻尼。
   final double infoRestoreDownDamping;
 
-  /// Resistance applied to the content layer during downward dismiss drag (0..1).
+  /// 下拉关闭时，内容层跟手下移的阻尼（视觉上的跟手比例）。
   final double viewerDismissDownDamping;
 
-  // ── Info layout ────────────────────────────────────────────────────────────
+  // ── 信息面板布局 ─────────────────────────────────────────────────────────
 
-  /// Fraction of screen height used as the default info sheet height (0..1).
-  /// 0.5 = half screen.
+  /// 默认展开高度占屏幕高度比例（0.5 即半屏）。
   final double defaultShownExtent;
 
-  /// How info state is synchronised when the user pages left/right.
+  /// 翻页时信息状态同步策略，见 [InfoSyncMode]。
   final InfoSyncMode infoSyncMode;
 
-  // ── Settle thresholds ──────────────────────────────────────────────────────
+  // ── 松手判定阈值 ─────────────────────────────────────────────────────────
 
-  /// Minimum drag distance (px) to trigger info show on release.
+  /// 从隐藏态上拉：松手时超过该位移（px）则展开信息面板。
   final double infoShowDistanceThreshold;
 
-  /// Minimum drag distance (px) to trigger info hide on release.
+  /// 从展开态下拉：相对起始高度下移超过该值（px）则倾向收起。
   final double infoHideDistanceThreshold;
 
-  /// Minimum upward fling velocity (px/s) to show info regardless of distance.
+  /// 向上快速甩动超过该速度（px/s）可无视距离直接展开。
   final double infoShowVelocityThreshold;
 
-  /// Minimum downward fling velocity (px/s) to hide info regardless of distance.
+  /// 向下快速甩动超过该速度则倾向收起信息面板。
   final double infoHideVelocityThreshold;
 
-  /// Minimum downward drag distance (px) to trigger dismiss on release.
+  /// 下拉位移超过该值（px）松手后倾向关闭整个查看器。
   final double dismissDistanceThreshold;
 
-  /// Minimum downward fling velocity (px/s) to trigger dismiss regardless of distance.
+  /// 向下速度超过该值（px/s）可无视距离直接关闭查看器。
   final double dismissVelocityThreshold;
 
-  // ── Overlay behaviour ──────────────────────────────────────────────────────
+  // ── 顶底栏与关闭联动 ─────────────────────────────────────────────────────
 
-  /// When [true], the top/bottom bars fade out as dismiss progress increases.
-  /// The bars NEVER translate — only opacity changes.
+  /// 为 true 时，下拉关闭过程中顶栏、底栏透明度随关闭进度降低（栏本身不位移）。
   final bool barsFadeWithDismissProgress;
 
-  // ── Gesture capability flags ───────────────────────────────────────────────
-  // These are communicated to the business via [ViewerPageContext] so that
-  // content renderers can adapt (e.g., disable zoom when framework owns the gesture).
+  // ── 手势总开关（部分会体现在 [ViewerPageContext] 供业务参考）────────────
 
-  /// Allow left/right paging via [PageView].
+  /// 是否允许 [PageView] 左右滑动翻页。
   final bool enableHorizontalPaging;
 
-  /// Allow downward swipe to close the viewer.
+  /// 是否允许从内容区向下拖关闭查看器（未放大时）。
   final bool enableDismissGesture;
 
-  /// Allow upward swipe to reveal the info sheet.
+  /// 是否允许上滑呼出信息面板。
   final bool enableInfoGesture;
 
-  /// Hint to the business page builder that pinch-to-zoom is appropriate.
+  /// 提示业务可启用双指缩放（框架内由 PhotoView 实现）。
   final bool enableZoom;
 
-  /// Hint to the business page builder that double-tap-to-zoom is appropriate.
+  /// 是否启用双击放大/还原。
   final bool enableDoubleTapZoom;
 
-  /// When [true], a single tap on the content area toggles the top/bottom bar
-  /// visibility (fade in / fade out).  Taps on the info sheet are not affected.
+  /// 单击内容区是否切换顶栏、底栏显隐；点击信息面板区域不受影响。
   ///
-  /// Because the double-tap-zoom recogniser also lives in the same area, the
-  /// toggle fires ~300 ms after a single tap — this is standard behaviour in
-  /// all major photo-viewer apps (iOS Photos, Google Photos, etc.).
+  /// 与双击缩放共存时，单击判定会略延迟（约 300ms），与常见相册应用一致。
   final bool enableTapToToggleBars;
 
-  /// When [true] and [enableTapToToggleBars] is also [true], the system status
-  /// bar and navigation bar are hidden together with the app bars (immersive
-  /// mode).  The system UI is restored when the viewer is dismissed.
+  /// 在 [enableTapToToggleBars] 为 true 时，是否同步隐藏系统状态栏与导航栏（沉浸式）。
+  /// 查看器销毁时会恢复边缘到边模式。
   final bool enableSystemUiToggle;
 
-  /// Returns a copy with the given fields replaced.
+  /// 复制并覆盖指定字段。
   ViewerInteractionConfig copyWith({
     double? infoDragUpDamping,
     double? infoRestoreDownDamping,

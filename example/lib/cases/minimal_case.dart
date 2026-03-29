@@ -3,10 +3,9 @@ import 'package:yuni_photo_view/yuni_photo_view.dart';
 
 import '../utils/demo_data.dart';
 
-/// Case 2 — Minimal integration.
+/// 案例 2：最简集成。
 ///
-/// Only [pageBuilder] is provided. No info, no bars.
-/// Demonstrates the absolute minimum API surface.
+/// 只传 [pageBuilder]，无 Info、无顶底栏；展示最小接入方式。
 class MinimalCase extends StatelessWidget {
   const MinimalCase({super.key});
 
@@ -28,7 +27,7 @@ class MinimalCase extends StatelessWidget {
     MediaViewer.open(
       context,
       items: DemoData.images,
-      // Only a pageBuilder — everything else is optional.
+      // 仅 pageBuilder 必填，其余参数均可省略。
       pageBuilder: (ctx, pageCtx) {
         return Stack(
           fit: StackFit.expand,
@@ -38,10 +37,11 @@ class MinimalCase extends StatelessWidget {
               fit: BoxFit.contain,
               alignment: Alignment.center,
               errorBuilder: (_, __, ___) => const Center(
-                child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
+                child:
+                    Icon(Icons.broken_image, color: Colors.white54, size: 64),
               ),
             ),
-            // Minimal back button — no topBarBuilder needed.
+            // 返回按钮放在页面内容里即可，不必使用 topBarBuilder。
             Positioned(
               top: 0,
               left: 0,

@@ -12,19 +12,18 @@ import 'viewer_page_shell.dart';
 
 // ── MediaViewer ───────────────────────────────────────────────────────────────
 
-/// The main viewer widget.
+/// 全屏媒体查看主组件。
 ///
-/// ## Layout
+/// ## 层级结构
 /// ```
 /// Stack
-///  ├── Background (fades out during dismiss)
+///  ├── 背景（下拉关闭时变淡，透出下层路由）
 ///  ├── Transform.translate → PageView.builder
-///  │     └── ViewerPageShell(index)  ← content + info, same layer
-///  ├── TopOverlay     (fixed position, alpha-only dismiss linkage)
-///  └── BottomOverlay  (fixed position, alpha-only dismiss linkage)
+///  │     └── ViewerPageShell（每页：主内容 + 信息面板同层）
+///  ├── 顶栏（固定，可随关闭进度改透明度）
+///  └── 底栏（固定，可随关闭进度改透明度）
 /// ```
 ///
-/// ## Usage
 /// ```dart
 /// MediaViewer(
 ///   items: myItems,
@@ -35,7 +34,7 @@ import 'viewer_page_shell.dart';
 /// )
 /// ```
 ///
-/// Or push it as a route (recommended for full-screen use):
+/// 推荐全屏时用路由打开：
 /// ```dart
 /// MediaViewer.open(context, items: myItems, ...);
 /// ```
@@ -46,6 +45,7 @@ class MediaViewer extends StatefulWidget {
     required this.pageBuilder,
     this.initialIndex = 0,
     this.infoBuilder,
+    this.pageOverlayBuilder,
     this.topBarBuilder,
     this.bottomBarBuilder,
     this.overlayBuilder,
@@ -58,55 +58,56 @@ class MediaViewer extends StatefulWidget {
     this.onBarsVisibilityChanged,
   });
 
-  /// The ordered list of items to display.
+  /// 要展示的数据列表。
   final List<ViewerItem> items;
 
-  /// Builds the content for each page. Required.
+  /// 每一页主内容，必填。
   final ViewerPageBuilder pageBuilder;
 
-  /// Index of the page to display on open.
+  /// 打开时默认显示的下标。
   final int initialIndex;
 
-  /// Builds the info sheet content per page.
-  /// Return a widget; the framework wraps it in the sheet surface.
-  /// When null, info gestures are globally disabled.
+  /// 每一页信息面板内部；为 null 时全局关闭上滑信息手势。
   final ViewerInfoBuilder? infoBuilder;
 
-  /// Builds the fixed top-bar overlay (not translated during dismiss).
+  /// 单页叠加层（不随缩放动），在全局顶底栏之下；某页不需要可返回 null。
+  final ViewerPageOverlayBuilder? pageOverlayBuilder;
+
+  /// 顶部固定栏；下拉关闭时本身不位移，可配透明度联动。
   final ViewerBarBuilder? topBarBuilder;
 
-  /// Builds the fixed bottom-bar overlay (not translated during dismiss).
+  /// 底部固定栏。
   final ViewerBarBuilder? bottomBarBuilder;
 
-  /// Additional overlay drawn above everything (not alpha-linked to dismiss).
+  /// 叠在所有层之上的浮层（默认不参与下拉关闭的透明度联动，由业务自控）。
   final ViewerOverlayBuilder? overlayBuilder;
 
-  /// External controller for programmatic control.
+  /// 可选外部控制器，用于跳转页、显隐信息/顶底栏等。
   final MediaViewerController? controller;
 
   final ViewerInteractionConfig config;
   final ViewerTheme theme;
 
-  /// Called whenever the visible page index changes.
+  /// 当前页下标变化时回调。
   final ValueChanged<int>? onPageChanged;
 
-  /// Called whenever the current page's info state changes.
+  /// 当前页信息面板枚举状态变化时回调。
   final ValueChanged<InfoState>? onInfoStateChanged;
 
-  /// Called when the viewer is about to be dismissed by gesture.
+  /// 手势判定即将关闭查看器时回调（在 [Navigator.pop] 之前）。
   final VoidCallback? onDismiss;
 
-  /// Called whenever the bars visibility toggles (single-tap fullscreen).
-  /// [true] = bars are now visible; [false] = bars are now hidden.
+  /// 顶底栏显隐切换时回调（单击内容区等）；参数为当前是否显示。
   final ValueChanged<bool>? onBarsVisibilityChanged;
 
-  /// Push the viewer as a full-screen route.
+  /// 以半透明路由压入 [MediaViewer]（便于下拉透出下层、Hero 正常）。
   static Future<T?> open<T>(
     BuildContext context, {
     required List<ViewerItem> items,
     required ViewerPageBuilder pageBuilder,
     int initialIndex = 0,
     ViewerInfoBuilder? infoBuilder,
+    ViewerPageOverlayBuilder? pageOverlayBuilder,
     ViewerBarBuilder? topBarBuilder,
     ViewerBarBuilder? bottomBarBuilder,
     ViewerOverlayBuilder? overlayBuilder,
@@ -125,6 +126,7 @@ class MediaViewer extends StatefulWidget {
           pageBuilder: pageBuilder,
           initialIndex: initialIndex,
           infoBuilder: infoBuilder,
+          pageOverlayBuilder: pageOverlayBuilder,
           topBarBuilder: topBarBuilder,
           bottomBarBuilder: bottomBarBuilder,
           overlayBuilder: overlayBuilder,
@@ -148,25 +150,25 @@ class MediaViewer extends StatefulWidget {
 
 class _MediaViewerState extends State<MediaViewer>
     with TickerProviderStateMixin {
-  // Pager
+  // 横向翻页
   late PageController _pageController;
   int _currentIndex = 0;
 
-  // Per-page info controllers (lazily created, kept alive).
+  // 每页一个信息面板控制器（懒创建，常驻）。
   final Map<int, InfoSheetController> _infoControllers = {};
 
-  // Per-page page controllers (zoom reporting).
+  // 每页一个缩放上报控制器。
   final Map<int, ViewerPageController> _pageControllers = {};
 
-  // Dismiss animation
+  // 未达关闭阈值时的回弹动画
   late AnimationController _dismissSnapController;
   final ValueNotifier<double> _dismissOffset = ValueNotifier(0);
   double _dismissSnapFrom = 0;
 
-  // Bars visibility (toggled by single tap on content)
+  // 顶底栏显隐（单击内容切换）
   bool _barsVisible = true;
 
-  // ── Lifecycle ─────────────────────────────────────────────────────────────
+  // ── 生命周期 ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
@@ -178,8 +180,8 @@ class _MediaViewerState extends State<MediaViewer>
       vsync: this,
       duration: widget.theme.dismissSnapBackDuration,
     )..addListener(() {
-        final t =
-            widget.theme.dismissSnapBackCurve.transform(_dismissSnapController.value);
+        final t = widget.theme.dismissSnapBackCurve
+            .transform(_dismissSnapController.value);
         _dismissOffset.value = _dismissSnapFrom * (1 - t);
       });
 
@@ -187,9 +189,10 @@ class _MediaViewerState extends State<MediaViewer>
       jumpToPage: _jumpToPage,
       showInfo: _showCurrentInfo,
       hideInfo: _hideCurrentInfo,
+      setBarsVisible: _setBarsVisibleFromController,
     );
 
-    // Listen to the initial page's zoom state so PageView physics can update.
+    // 监听首页的缩放，以便切换 PageView 的 physics。
     _pageCtrlAt(_currentIndex).addListener(_onCurrentPageZoomChanged);
   }
 
@@ -201,14 +204,14 @@ class _MediaViewerState extends State<MediaViewer>
         jumpToPage: _jumpToPage,
         showInfo: _showCurrentInfo,
         hideInfo: _hideCurrentInfo,
+        setBarsVisible: _setBarsVisibleFromController,
       );
     }
   }
 
   @override
   void dispose() {
-    // Always restore system UI when the viewer closes, regardless of which
-    // mode we left it in.
+    // 关闭查看器时始终恢复系统栏，与当前栏显隐无关。
     if (widget.config.enableSystemUiToggle) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
@@ -225,7 +228,7 @@ class _MediaViewerState extends State<MediaViewer>
     super.dispose();
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── 工具 ─────────────────────────────────────────────────────────────────
 
   ViewerInteractionConfig get _cfg => widget.config;
 
@@ -250,13 +253,12 @@ class _MediaViewerState extends State<MediaViewer>
 
   InfoSheetController get _currentInfoCtrl => _infoCtrlAt(_currentIndex);
 
-  // Rebuild when current page zoom changes so PageView physics updates.
+  // 缩放跨越阈值时触发 rebuild，更新 PageView 是否可横滑。
   void _onCurrentPageZoomChanged() => setState(() {});
 
-  // ── Page change ───────────────────────────────────────────────────────────
+  // ── 翻页 ─────────────────────────────────────────────────────────────────
 
   void _onPageChanged(int index) {
-    // Re-subscribe zoom listener to the new page's controller.
     _pageCtrlAt(_currentIndex).removeListener(_onCurrentPageZoomChanged);
     _currentIndex = index;
     _pageCtrlAt(_currentIndex).addListener(_onCurrentPageZoomChanged);
@@ -264,7 +266,7 @@ class _MediaViewerState extends State<MediaViewer>
     widget.controller?.updateIndex(index);
     widget.controller?.updateInfoState(_currentInfoCtrl.state);
     widget.onPageChanged?.call(index);
-    setState(() {}); // Rebuild bar context.
+    setState(() {}); // 刷新顶底栏上下文
   }
 
   void _jumpToPage() {
@@ -279,7 +281,7 @@ class _MediaViewerState extends State<MediaViewer>
   void _showCurrentInfo() => _currentInfoCtrl.show();
   void _hideCurrentInfo() => _currentInfoCtrl.hide();
 
-  // ── Dismiss handling ──────────────────────────────────────────────────────
+  // ── 下拉关闭 ────────────────────────────────────────────────────────────
 
   void _onDismissUpdate(double offset) {
     _dismissSnapController.stop();
@@ -314,23 +316,33 @@ class _MediaViewerState extends State<MediaViewer>
     return (offset / range).clamp(0.0, 1.0);
   }
 
-  // ── Bars toggle (single-tap fullscreen) ──────────────────────────────────
+  // ── 顶底栏（单击内容切换）────────────────────────────────────────────────
 
   void _toggleBars() {
     setState(() => _barsVisible = !_barsVisible);
+    widget.controller?.updateBarsVisible(_barsVisible);
     widget.onBarsVisibilityChanged?.call(_barsVisible);
-    if (_cfg.enableSystemUiToggle) {
-      if (_barsVisible) {
-        // Restore system bars (status bar + nav bar).
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      } else {
-        // Hide system bars; they reappear briefly on edge-swipe then auto-hide.
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      }
+    _applySystemUi(_barsVisible);
+  }
+
+  /// 由 [MediaViewerController.showBars] / [hideBars] / [setBarsVisible] 调用。
+  void _setBarsVisibleFromController(bool visible) {
+    if (_barsVisible == visible) return;
+    setState(() => _barsVisible = visible);
+    widget.onBarsVisibilityChanged?.call(_barsVisible);
+    _applySystemUi(_barsVisible);
+  }
+
+  void _applySystemUi(bool barsVisible) {
+    if (!_cfg.enableSystemUiToggle) return;
+    if (barsVisible) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    } else {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     }
   }
 
-  // ── Bar context builder ───────────────────────────────────────────────────
+  // ── 构造顶底栏上下文 ─────────────────────────────────────────────────────
 
   ViewerBarContext _barCtx(double dismissProgress) => ViewerBarContext(
         index: _currentIndex,
@@ -340,57 +352,46 @@ class _MediaViewerState extends State<MediaViewer>
         config: widget.config,
         barsVisible: _barsVisible,
         infoRevealProgress: _currentInfoCtrl.revealProgress,
+        isZoomed: _pageCtrlAt(_currentIndex).isZoomed,
       );
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  // ── build ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final screenH = MediaQuery.of(context).size.height;
 
-    // Merge _dismissOffset and _currentInfoCtrl so that bars/overlays rebuild
-    // both when the user is dismiss-dragging AND when the info sheet is being
-    // revealed or hidden.  The merged Listenable is recreated on every build()
-    // call, which is only triggered by setState (page-change, zoom-change,
-    // bars-toggle) — not on every notification — so this is efficient.
+    // 同时监听下拉位移与当前页信息控制器：拖动关闭与信息面板动画都会刷新顶底栏。
+    // Listenable.merge 在每次 build 新建，但 build 仅由 setState 触发，开销可接受。
     return ListenableBuilder(
       listenable: Listenable.merge([_dismissOffset, _currentInfoCtrl]),
       builder: (ctx, _) {
         final rawOffset = _dismissOffset.value;
         final progress = _dismissProgress(rawOffset);
-        final contentDy =
-            rawOffset * widget.config.viewerDismissDownDamping;
+        final contentDy = rawOffset * widget.config.viewerDismissDownDamping;
         final bgAlpha = (1.0 - progress).clamp(0.0, 1.0);
-        final barAlpha = widget.config.barsFadeWithDismissProgress
-            ? bgAlpha
-            : 1.0;
+        final barAlpha =
+            widget.config.barsFadeWithDismissProgress ? bgAlpha : 1.0;
 
         return Stack(
           children: [
-            // ── Background ────────────────────────────────────────────────
-            // Fades out so the previous route shows through (ViewerRoute is
-            // non-opaque).
+            // 背景（路由非不透明，可透出下层）
             Positioned.fill(
               child: ColoredBox(
-                  color: widget.theme.backgroundColor.withValues(alpha: bgAlpha),
+                color: widget.theme.backgroundColor.withValues(alpha: bgAlpha),
               ),
             ),
 
-            // ── Paged content (translated during dismiss) ─────────────────
+            // 分页内容（随下拉平移）
             Positioned.fill(
               child: Transform.translate(
                 offset: Offset(0, contentDy),
-                // PhotoViewGestureDetectorScope ensures that two-finger pinch
-                // gestures are always claimed before the horizontal PageView
-                // scroll recognizer can intercept them.  Works in tandem with
-                // PhotoView.customChild inside each ViewerPageShell.
+                // 与壳内 PhotoView.customChild 配合：双指缩放优先于 PageView 横滑。
                 child: PhotoViewGestureDetectorScope(
                   axis: Axis.horizontal,
                   child: PageView.builder(
                     controller: _pageController,
-                    // Disable horizontal paging while zoomed so that a single-
-                    // finger pan in the zoomed PhotoView wins over the PageView
-                    // drag recogniser.
+                    // 放大时禁止横滑，单指拖动交给 PhotoView。
                     physics: _pageCtrlAt(_currentIndex).isZoomed
                         ? const NeverScrollableScrollPhysics()
                         : (widget.config.enableHorizontalPaging
@@ -408,23 +409,22 @@ class _MediaViewerState extends State<MediaViewer>
                       theme: widget.theme,
                       pageBuilder: widget.pageBuilder,
                       infoBuilder: widget.infoBuilder,
+                      pageOverlayBuilder: widget.pageOverlayBuilder,
+                      barsVisible: _barsVisible,
+                      dismissProgress: progress,
                       screenHeight: screenH,
                       onDismissUpdate: _onDismissUpdate,
                       onDismissEnd: _onDismissEnd,
-                      onContentTap: _cfg.enableTapToToggleBars
-                          ? _toggleBars
-                          : null,
+                      onContentTap:
+                          _cfg.enableTapToToggleBars ? _toggleBars : null,
                     ),
                   ),
                 ),
               ),
             ),
 
-            // ── Top bar (fixed position) ───────────────────────────────────
-            // Two-layer opacity:
-            //   outer Opacity  → dismiss-progress fade (immediate, finger-driven)
-            //   inner AnimatedOpacity → tap-toggle fade (smooth 220 ms animation)
-            // IgnorePointer prevents hidden bars from absorbing taps.
+            // 顶栏：外层 Opacity 跟下拉进度；内层 AnimatedOpacity 跟单击显隐。
+            // IgnorePointer：隐藏时不抢点击。
             if (widget.topBarBuilder != null)
               Positioned(
                 top: 0,
@@ -444,7 +444,6 @@ class _MediaViewerState extends State<MediaViewer>
                 ),
               ),
 
-            // ── Bottom bar (fixed position) ────────────────────────────────
             if (widget.bottomBarBuilder != null)
               Positioned(
                 bottom: 0,
@@ -464,7 +463,6 @@ class _MediaViewerState extends State<MediaViewer>
                 ),
               ),
 
-            // ── Extra overlay ─────────────────────────────────────────────
             if (widget.overlayBuilder != null)
               Positioned.fill(
                 child: IgnorePointer(
@@ -481,9 +479,7 @@ class _MediaViewerState extends State<MediaViewer>
 
 // ── _ViewerPageRoute ──────────────────────────────────────────────────────────
 
-/// A transparent modal route that lets the previous page show through.
-/// This enables the "see-through background during dismiss" effect and
-/// keeps Hero animations working correctly.
+/// 非不透明路由：下拉时可透出上一页，且利于 Hero。
 class _ViewerPageRoute<T> extends PageRoute<T> {
   _ViewerPageRoute({required this.builder});
 
@@ -510,9 +506,7 @@ class _ViewerPageRoute<T> extends PageRoute<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    // Wrap in a transparent Material so that Material-dependent widgets used
-    // inside topBarBuilder / pageBuilder (Chip, ListTile, etc.) work without
-    // the business needing to provide their own Material ancestor.
+    // 透明 Material：顶栏、pageBuilder 里用 ListTile、Chip 等不必再包一层。
     return Material(
       type: MaterialType.transparency,
       child: builder(context),
@@ -526,10 +520,7 @@ class _ViewerPageRoute<T> extends PageRoute<T> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    // No framework transition — the MediaViewer manages its own entry/exit
-    // animation via the background colour and content offset.
-    // Hero animations work because the route is non-opaque and we don't
-    // replace the hero with a fade here.
+    // 进退场由 MediaViewer 自己用背景与位移表现；此处仅轻量淡入，避免挡 Hero。
     return FadeTransition(
       opacity: CurvedAnimation(
         parent: animation,

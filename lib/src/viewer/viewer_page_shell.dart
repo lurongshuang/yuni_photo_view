@@ -7,37 +7,35 @@ import '../core/viewer_state.dart';
 import '../core/viewer_theme.dart';
 import '../info_sheet/info_sheet_controller.dart';
 
-// ── Gesture mode ──────────────────────────────────────────────────────────────
+// ── 竖向手势模式 ────────────────────────────────────────────────────────────
 
 enum _GestureMode {
-  /// Not yet determined — waiting for enough delta.
+  /// 尚未判定，等待足够位移。
   pending,
 
-  /// Revealing or expanding the info sheet upward.
+  /// 向上拖：展开或拉高信息面板。
   expandInfo,
 
-  /// Collapsing the info sheet downward.
+  /// 向下拖：压低或收起信息面板。
   collapseInfo,
 
-  /// Dismiss (viewer close) drag — content slides down.
+  /// 向下拖：关闭查看器（内容跟手下移）。
   dismiss,
 
-  /// Consumed by content (e.g., content is zoomed) — framework does nothing.
+  /// 不处理（如已放大），交给子级手势。
   consumed,
 }
 
-// ── Dismiss callbacks ─────────────────────────────────────────────────────────
+// ── 下拉关闭回调类型 ─────────────────────────────────────────────────────────
 
 typedef DismissUpdateCallback = void Function(double offset);
 typedef DismissEndCallback = void Function(double offset, double velocityY);
 
 // ── ViewerPageShell ───────────────────────────────────────────────────────────
 
-/// The per-page composite: content + info sheet at the same layout level.
+/// 单页复合层：主内容区与信息面板同一层级，左右翻页时一起移动。
 ///
-/// Both layers travel together when the user pages left/right.
-/// Vertical gestures are captured here and routed to either the info sheet
-/// controller or the dismiss handler (callbacks to the parent viewer).
+/// 竖向拖动手势在此分流：交给 [InfoSheetController] 或上层的关闭回调。
 class ViewerPageShell extends StatefulWidget {
   const ViewerPageShell({
     super.key,
@@ -48,7 +46,10 @@ class ViewerPageShell extends StatefulWidget {
     required this.config,
     required this.theme,
     required this.pageBuilder,
+    required this.barsVisible,
+    required this.dismissProgress,
     this.infoBuilder,
+    this.pageOverlayBuilder,
     this.onDismissUpdate,
     this.onDismissEnd,
     this.onContentTap,
@@ -65,16 +66,24 @@ class ViewerPageShell extends StatefulWidget {
   final ViewerPageBuilder pageBuilder;
   final ViewerInfoBuilder? infoBuilder;
 
+  /// 不参与缩放的单页叠加层（如 Live 角标），在内容之上、全局顶底栏之下。
+  final ViewerPageOverlayBuilder? pageOverlayBuilder;
+
   final DismissUpdateCallback? onDismissUpdate;
   final DismissEndCallback? onDismissEnd;
 
-  /// Called on a single tap on the content area (not info sheet).
-  /// Used by [MediaViewer] to toggle the top/bottom bar visibility.
-  /// When null, single taps are not consumed by the shell.
+  /// 内容区单击（不含信息面板）；由 [MediaViewer] 用于切换顶底栏。
+  /// 为 null 时外壳不消费单击。
   final VoidCallback? onContentTap;
 
-  /// Pre-supplied screen height to avoid MediaQuery look-ups in tight loops.
+  /// 可选传入屏幕高度，减少频繁 [MediaQuery]。
   final double? screenHeight;
+
+  /// 全局顶底栏是否显示。
+  final bool barsVisible;
+
+  /// 下拉关闭进度（0.0～1.0）。
+  final double dismissProgress;
 
   @override
   State<ViewerPageShell> createState() => _ViewerPageShellState();
@@ -84,11 +93,10 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   _GestureMode _gestureMode = _GestureMode.pending;
   double _dismissRawOffset = 0;
 
-  // Key so we can call reset() on the zoom wrapper from the shell level
-  // (e.g. when the page is re-activated after a swipe).
+  // 便于壳层在需要时对缩放包装调用 reset（例如翻页复用）。
   final GlobalKey<_ZoomableMediaWrapperState> _zoomKey = GlobalKey();
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── 辅助 ───────────────────────────────────────────────────────────────
 
   InfoSheetController get _info => widget.infoController;
   ViewerInteractionConfig get _cfg => widget.config;
@@ -101,7 +109,7 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   double _resolveScreenHeight(BuildContext ctx) =>
       widget.screenHeight ?? MediaQuery.of(ctx).size.height;
 
-  // ── Gesture handlers ──────────────────────────────────────────────────────
+  // ── 拖动手势 ────────────────────────────────────────────────────────────
 
   void _onDragStart(DragStartDetails details, double screenH) {
     _dismissRawOffset = 0;
@@ -112,25 +120,26 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   void _onDragUpdate(DragUpdateDetails details) {
     final dy = details.delta.dy;
 
-    // Resolve mode on first significant movement.
+    // 首次有明显竖向位移时再判定模式。
     if (_gestureMode == _GestureMode.pending) {
       if (dy.abs() < 3) return;
 
       if (dy < 0) {
-        // Upward → show/expand info.
-        _gestureMode = _hasInfo ? _GestureMode.expandInfo : _GestureMode.consumed;
+        // 向上 → 信息面板
+        _gestureMode =
+            _hasInfo ? _GestureMode.expandInfo : _GestureMode.consumed;
       } else {
-        // Downward.
+        // 向下
         if (_info.state == InfoState.shown) {
           _gestureMode = _GestureMode.collapseInfo;
-        } else if (widget.pageController.isZoomed || !_cfg.enableDismissGesture) {
+        } else if (widget.pageController.isZoomed ||
+            !_cfg.enableDismissGesture) {
           _gestureMode = _GestureMode.consumed;
         } else {
           _gestureMode = _GestureMode.dismiss;
         }
       }
 
-      // Start info drag tracking when needed.
       if (_gestureMode == _GestureMode.expandInfo ||
           _gestureMode == _GestureMode.collapseInfo) {
         _info.startDrag();
@@ -176,32 +185,24 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
     _gestureMode = _GestureMode.pending;
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  // ── build ───────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final screenH = _resolveScreenHeight(context);
 
-    // Proactively set the screen height so that InfoSheetController.show()
-    // targets the correct extent even before the first drag gesture fires
-    // (e.g. when show() is called programmatically right after a page swipe).
+    // 先写入高度，便于程序调用 show() 时未到首次拖动也能算对默认高度。
     _info.setScreenHeight(screenH);
 
     return ListenableBuilder(
       listenable: widget.pageController,
       builder: (ctx, _) {
         final isZoomed = widget.pageController.isZoomed;
-        // When content is zoomed, null out the drag callbacks so that the
-        // GestureDetector does not register a VerticalDragRecognizer and lets
-        // PhotoView's ScaleGestureRecognizer handle single-finger pan.
-        //
-        // Single-tap bar toggle is intentionally NOT placed here — see
-        // _ZoomableMediaWrapper.onSingleTap. Relying on PhotoView's own
-        // TapGestureRecognizer (via onTapUp) avoids the gesture-arena conflict
-        // that prevented onTap from ever firing in this outer GestureDetector.
+        // 放大时不注册竖拖，把单指平移交给 PhotoView；单击切栏放在 PhotoView 的 onTapUp，避免与外层 GestureDetector 抢竞技场。
         return GestureDetector(
           behavior: HitTestBehavior.translucent,
-          onVerticalDragStart: isZoomed ? null : (d) => _onDragStart(d, screenH),
+          onVerticalDragStart:
+              isZoomed ? null : (d) => _onDragStart(d, screenH),
           onVerticalDragUpdate: isZoomed ? null : _onDragUpdate,
           onVerticalDragEnd: isZoomed ? null : _onDragEnd,
           child: ListenableBuilder(
@@ -227,13 +228,15 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       availableSize: Size(screenW, contentH),
       config: _cfg,
       pageController: widget.pageController,
+      barsVisible: widget.barsVisible,
+      dismissProgress: widget.dismissProgress,
     );
+
+    final pageOverlay = widget.pageOverlayBuilder?.call(ctx, pageCtx);
 
     return Stack(
       children: [
-        // ── Media viewport (top) ──────────────────────────────────────────
-        // The height shrinks as the info sheet rises.
-        // Content is always anchored to the top — the framework clips at bottom.
+        // 主内容视口：高度随信息面板上移变矮；内容顶对齐，底部由 ClipRect 裁切。
         Positioned(
           top: 0,
           left: 0,
@@ -246,17 +249,22 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
               enabled: _cfg.enableZoom && revealProgress < 0.05,
               enableDoubleTap: _cfg.enableDoubleTapZoom,
               pageController: widget.pageController,
-              // Single-tap is detected via PhotoView's internal TapGestureRecognizer
-              // (onTapUp), which naturally defers to DoubleTapGestureRecognizer
-              // when a double-tap occurs. This avoids the gesture-arena conflict
-              // that existed when we used an outer GestureDetector(onTap).
-              onSingleTap: _cfg.enableTapToToggleBars ? widget.onContentTap : null,
+              onSingleTap:
+                  _cfg.enableTapToToggleBars ? widget.onContentTap : null,
               child: widget.pageBuilder(ctx, pageCtx),
             ),
           ),
         ),
 
-        // ── Info sheet (bottom, same layer as content) ─────────────────────
+        if (pageOverlay != null)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: contentH,
+            child: pageOverlay,
+          ),
+
         if (_hasInfo && sheetH > 0)
           Positioned(
             bottom: 0,
@@ -277,19 +285,13 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   }
 }
 
-// ── Media viewport wrapper ────────────────────────────────────────────────────
+// ── 主内容视口对齐插值 ───────────────────────────────────────────────────────
 
-/// Wraps the business content with a dynamically interpolated alignment.
+/// 随 [revealProgress] 在「垂直居中」与「顶对齐」之间插值；底部溢出裁掉，不盖住信息面板。
 ///
-/// - When [revealProgress] == 0 (info hidden): content is **centred** in the
-///   full-screen viewport — the natural default for photo/video viewing.
-/// - As [revealProgress] increases toward 1 (info at default half-screen):
-///   the alignment smoothly shifts to **topCenter** so the media top edge
-///   locks to the viewport top edge.
-/// - Beyond 1 (sheet expanded further): alignment stays at topCenter.
-///
-/// [ClipRect] ensures content that is taller than the (shrinking) viewport
-/// is clipped at the bottom rather than overflowing onto the info sheet.
+/// - `0`：全屏看时内容居中。
+/// - 趋向 `1`：媒体顶边贴视口顶，便于与上拉面板衔接。
+/// - 大于 `1`：保持顶对齐。
 class _MediaViewportWrapper extends StatelessWidget {
   const _MediaViewportWrapper({
     required this.child,
@@ -298,14 +300,12 @@ class _MediaViewportWrapper extends StatelessWidget {
 
   final Widget child;
 
-  /// 0.0 = info hidden (center), 1.0+ = info shown (topCenter).
+  /// 0 = 信息隐藏（居中），1 及以上 = 信息展开（顶对齐）。
   final double revealProgress;
 
   @override
   Widget build(BuildContext context) {
-    // Alignment.center  → (0,  0)
-    // Alignment.topCenter → (0, -1)
-    // Interpolate the Y component from 0 → -1 as revealProgress goes 0 → 1.
+    // Alignment.center 的 y 为 0，topCenter 为 -1；在 0～1 间插值。
     final alignY = -(revealProgress.clamp(0.0, 1.0));
     return ClipRect(
       child: Align(
@@ -316,18 +316,12 @@ class _MediaViewportWrapper extends StatelessWidget {
   }
 }
 
-// ── Zoomable media wrapper ────────────────────────────────────────────────────
+// ── PhotoView 缩放包装 ───────────────────────────────────────────────────────
 
-/// Wraps business content in a [PhotoView.customChild] to provide
-/// pinch-to-zoom, double-tap zoom/restore, and bounded panning.
+/// 用 [PhotoView.customChild] 包一层业务子组件：双指缩放、双击放大/还原、边界内平移。
 ///
-/// Using [PhotoView.customChild] instead of [InteractiveViewer] ensures that
-/// the gesture recognizer participates in the [PhotoViewGestureDetectorScope]
-/// that wraps the [PageView] in [MediaViewer], completely eliminating the
-/// conflict between horizontal page-swiping and two-finger pinch-to-zoom.
-///
-/// Zoom state is reported back to [ViewerPageController] so the parent shell
-/// can block dismiss gestures and disable PageView paging while zoomed.
+/// 与 [MediaViewer] 外层的 [PhotoViewGestureDetectorScope] 配合，避免横滑翻页与双指缩放抢手势。
+/// 缩放状态写入 [ViewerPageController]，供壳层关闭竖拖、禁止 PageView 滑动。
 class _ZoomableMediaWrapper extends StatefulWidget {
   const _ZoomableMediaWrapper({
     super.key,
@@ -343,11 +337,7 @@ class _ZoomableMediaWrapper extends StatefulWidget {
   final bool enableDoubleTap;
   final ViewerPageController pageController;
 
-  /// Called when a confirmed single tap on the content area is detected.
-  ///
-  /// PhotoView's internal [TapGestureRecognizer] and [DoubleTapGestureRecognizer]
-  /// already coordinate correctly: [onSingleTap] fires only for genuine single
-  /// taps, never for the first tap of a double-tap sequence.
+  /// PhotoView 在确认「非双击」后的单击回调，用于切换顶底栏。
   final VoidCallback? onSingleTap;
 
   @override
@@ -360,13 +350,10 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
   late final PhotoViewScaleStateController _scaleStateCtrl;
   late final AnimationController _animCtrl;
 
-  // Used to animate double-tap zoom/restore via the PhotoViewController.
   Animation<double>? _scaleAnim;
   Animation<Offset>? _positionAnim;
 
-  // Tap position captured via PhotoView's own onTapDown; updated on every
-  // pointer-down so the last value is the second-tap position when
-  // scaleStateCycle fires.
+  // 每次 onTapDown 更新；双击第二下按下时的坐标即为缩放中心。
   Offset _lastTapPosition = Offset.zero;
 
   static const double _kMinScale = 1.0;
@@ -383,15 +370,15 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
       vsync: this,
       duration: const Duration(milliseconds: 250),
     )..addListener(_onAnimTick);
-    debugPrint('[Viewer][Zoom] initState enableDoubleTap=${widget.enableDoubleTap}');
+    debugPrint('[查看器][缩放] initState enableDoubleTap=${widget.enableDoubleTap}');
   }
 
   @override
   void didUpdateWidget(_ZoomableMediaWrapper old) {
     super.didUpdateWidget(old);
-    // When zoom is disabled (info panel opening), snap back to 1× immediately.
+    // 信息面板将起时关闭缩放：立即回到 1×。
     if (old.enabled && !widget.enabled && _isZoomed) {
-      debugPrint('[Viewer][Zoom] disabled while zoomed — snap to 1×');
+      debugPrint('[查看器][缩放] 缩放关闭且当前已放大 — 强制 1×');
       _animCtrl.stop();
       _photoCtrl.updateMultiple(scale: _kMinScale, position: Offset.zero);
       _scaleStateCtrl.scaleState = PhotoViewScaleState.initial;
@@ -408,7 +395,7 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     super.dispose();
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── 辅助 ───────────────────────────────────────────────────────────────
 
   bool get _isZoomed => (_photoCtrl.scale ?? _kMinScale) > 1.02;
 
@@ -426,20 +413,8 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     }
   }
 
-  // ── Double-tap (driven via PhotoView's own scaleStateCycle) ───────────────
-  //
-  // We do NOT wrap PhotoView.customChild in an outer GestureDetector(onDoubleTap)
-  // because PhotoView always registers its own DoubleTapGestureRecognizer
-  // internally (handleDoubleTap is always non-null).  The inner recogniser wins
-  // the gesture arena every time, so an outer one is never called.
-  //
-  // Instead we hook into PhotoView's native mechanism:
-  //   • onTapDown  → captures the latest tap position (updated on every down,
-  //                  so the value at scaleStateCycle call-time is the second
-  //                  tap's position — exactly what we want for zoom centering).
-  //   • scaleStateCycle → intercepts the double-tap event and triggers our
-  //                  custom animation; returns the SAME state so PhotoView
-  //                  itself does not animate anything.
+  // 双击走 PhotoView 的 scaleStateCycle，勿再包一层 GestureDetector(onDoubleTap)，
+  // 否则内层 DoubleTapGestureRecognizer 永远胜出，外层不会触发。
 
   void _onPhotoViewTapDown(
     BuildContext _,
@@ -447,36 +422,28 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     PhotoViewControllerValue __,
   ) {
     _lastTapPosition = details.localPosition;
-    debugPrint('[Viewer][Zoom] ✅ onTapDown at $_lastTapPosition');
+    debugPrint('[查看器][缩放] onTapDown $_lastTapPosition');
   }
 
-  /// Called by PhotoView's internal [TapGestureRecognizer] only for confirmed
-  /// single taps — never fires when a double-tap is detected (the arena is won
-  /// by [DoubleTapGestureRecognizer] in that case, so [TapGestureRecognizer]
-  /// is rejected and [onTapUp] is not invoked).
   void _onPhotoViewTapUp(
     BuildContext _,
     TapUpDetails details,
     PhotoViewControllerValue __,
   ) {
-    debugPrint('[Viewer][Zoom] ✅ onTapUp → single tap confirmed → calling onSingleTap');
+    debugPrint('[查看器][缩放] onTapUp 确认为单击 → onSingleTap');
     widget.onSingleTap?.call();
   }
 
-  /// Called by PhotoView on every double-tap (scaleStateCycle hook).
-  /// Drives our custom zoom animation and returns the SAME state so
-  /// PhotoView does not independently change its own transform.
   PhotoViewScaleState _handleDoubleTap(PhotoViewScaleState currentState) {
     debugPrint(
-        '[Viewer][Zoom] ✅ _handleDoubleTap called currentState=$currentState isZoomed=$_isZoomed');
+        '[查看器][缩放] _handleDoubleTap currentState=$currentState isZoomed=$_isZoomed');
 
     if (!widget.enableDoubleTap) {
-      debugPrint('[Viewer][Zoom] double-tap disabled — ignoring');
-      return currentState; // no-op
+      debugPrint('[查看器][缩放] 双击缩放已关闭 — 忽略');
+      return currentState;
     }
 
     _runDoubleTapAnimation();
-    // Return current state so PhotoView does NOT independently animate.
     return currentState;
   }
 
@@ -491,22 +458,18 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     if (_isZoomed) {
       targetScale = _kMinScale;
       targetPosition = Offset.zero;
-      debugPrint('[Viewer][Zoom] double-tap → restore to 1×');
+      debugPrint('[查看器][缩放] 双击 → 恢复 1×');
     } else {
       const s = _kDoubleTapScale;
       targetScale = s;
-      // PhotoView's effective rendering is: viewport_pos = scale * child_pos + position
-      // (the Center widget and Transform.alignment:center terms cancel each other out,
-      // leaving a simple scale-from-top-left model).
-      //
-      // To keep the tapped pixel at its original viewport position after zooming:
-      //   tap = s * tap + targetPosition  →  targetPosition = -tap * (s - 1)
+      // 视口位置 ≈ scale * 子坐标 + position；令点击处在缩放前后屏幕位置不变：
+      // targetPosition = -tap * (s - 1)
       targetPosition = Offset(
         -_lastTapPosition.dx * (s - 1),
         -_lastTapPosition.dy * (s - 1),
       );
       debugPrint(
-          '[Viewer][Zoom] double-tap → zoom ${s}x at $_lastTapPosition targetPos=$targetPosition');
+          '[查看器][缩放] 双击 → 放大 ${s}x 于 $_lastTapPosition targetPos=$targetPosition');
     }
 
     final curved = CurvedAnimation(
@@ -515,19 +478,15 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     );
     _scaleAnim =
         Tween<double>(begin: currentScale, end: targetScale).animate(curved);
-    _positionAnim =
-        Tween<Offset>(begin: currentPosition, end: targetPosition).animate(curved);
+    _positionAnim = Tween<Offset>(begin: currentPosition, end: targetPosition)
+        .animate(curved);
 
-    // Keep the scale state controller in sync so PhotoView's internal state
-    // is consistent (prevents PhotoView from launching its own animation).
     _scaleStateCtrl.scaleState = targetScale > _kMinScale
         ? PhotoViewScaleState.zoomedIn
         : PhotoViewScaleState.initial;
 
     _animCtrl.forward(from: 0);
   }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -538,19 +497,13 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     return PhotoView.customChild(
       controller: _photoCtrl,
       scaleStateController: _scaleStateCtrl,
-      // tightMode: child receives tight constraints = viewport size.
-      // This makes PhotoView's boundary clamping work correctly without
-      // needing to pass an explicit childSize.
+      // tightMode：子级约束为视口尺寸，边界夹紧无需额外 childSize。
       tightMode: true,
       minScale: _kMinScale,
       maxScale: _kMaxScale,
       initialScale: _kMinScale,
       backgroundDecoration: const BoxDecoration(color: Colors.transparent),
       gestureDetectorBehavior: HitTestBehavior.translucent,
-      // Hook into PhotoView's own tap pipeline:
-      // onTapDown → capture tap position (for double-tap centering)
-      // onTapUp   → confirmed single tap (fires only when double-tap did NOT occur)
-      // scaleStateCycle → intercept double-tap, run our animation
       onTapDown: _onPhotoViewTapDown,
       onTapUp: widget.onSingleTap != null ? _onPhotoViewTapUp : null,
       scaleStateCycle: _handleDoubleTap,
@@ -559,9 +512,8 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
   }
 }
 
-// ── Info sheet surface ────────────────────────────────────────────────────────
+// ── 信息面板外观（圆角、拖条、业务内容）────────────────────────────────────────
 
-/// The visible info sheet: rounded top corners, drag handle, and content.
 class _InfoSheetSurface extends StatefulWidget {
   const _InfoSheetSurface({
     required this.theme,
@@ -583,7 +535,6 @@ class _InfoSheetSurfaceState extends State<_InfoSheetSurface> {
   @override
   void initState() {
     super.initState();
-    // Measure content after first layout.
     WidgetsBinding.instance.addPostFrameCallback((_) => _measureContent());
   }
 
@@ -604,19 +555,14 @@ class _InfoSheetSurfaceState extends State<_InfoSheetSurface> {
     return Material(
       color: Colors.transparent,
       child: Container(
-        // Clip the child to the Container's (animated) height so that when the
-        // info sheet is only partially revealed the content does not paint
-        // outside its allocated area.
+        // 按当前面板高度裁剪，避免刚拉起几条像素时内容画到外面。
         clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
           color: bg,
           borderRadius: theme.infoBorderRadius,
         ),
-        // OverflowBox gives the Column a much larger maxHeight than the tight
-        // constraint coming from the Positioned ancestor (which equals sheetH,
-        // potentially only a few pixels during animation start).  This prevents
-        // RenderFlex from throwing an overflow assertion while the Container's
-        // clipBehavior takes care of the actual visual clipping.
+        // Positioned 在动画初期可能只给很小高度，OverflowBox 给 Column 更大 maxHeight，
+        // 避免 RenderFlex 断言溢出；真正可见区域仍由 clip 限制。
         child: OverflowBox(
           minHeight: 0,
           maxHeight: 10000,
@@ -624,7 +570,6 @@ class _InfoSheetSurfaceState extends State<_InfoSheetSurface> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Drag handle pill
               SizedBox(
                 height: 28,
                 child: Center(
@@ -633,17 +578,14 @@ class _InfoSheetSurfaceState extends State<_InfoSheetSurface> {
                     height: theme.dragHandleSize.height,
                     decoration: BoxDecoration(
                       color: handleColor,
-                      borderRadius:
-                          BorderRadius.circular(theme.dragHandleSize.height / 2),
+                      borderRadius: BorderRadius.circular(
+                          theme.dragHandleSize.height / 2),
                     ),
                   ),
                 ),
               ),
-
-              // Business info content — measured after layout.
               Flexible(
                 child: SingleChildScrollView(
-                  // Scrolling is handled by the shell's gesture routing.
                   physics: const NeverScrollableScrollPhysics(),
                   child: KeyedSubtree(
                     key: _contentKey,
