@@ -1,28 +1,40 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yuni_photo_view/yuni_photo_view.dart';
-import 'package:yuni_photo_view/yuni_photo_view_platform_interface.dart';
-import 'package:yuni_photo_view/yuni_photo_view_method_channel.dart';
-import 'package:plugin_platform_interface/plugin_platform_interface.dart';
-
-class MockYuniPhotoViewPlatform
-    with MockPlatformInterfaceMixin
-    implements YuniPhotoViewPlatform {
-  @override
-  Future<String?> getPlatformVersion() => Future.value('42');
-}
 
 void main() {
-  final YuniPhotoViewPlatform initialPlatform = YuniPhotoViewPlatform.instance;
+  group('DefaultViewerItem', () {
+    test('holds id and payload', () {
+      const item = DefaultViewerItem(id: 'a', payload: 'https://example.com/x.jpg');
+      expect(item.id, 'a');
+      expect(item.payload, 'https://example.com/x.jpg');
+      expect(item.hasInfo, true);
+    });
 
-  test('$MethodChannelYuniPhotoView is the default instance', () {
-    expect(initialPlatform, isInstanceOf<MethodChannelYuniPhotoView>());
+    test('copyWith overrides hasInfo', () {
+      const item = DefaultViewerItem(id: 'b', hasInfo: true);
+      final next = item.copyWith(hasInfo: false);
+      expect(next.hasInfo, false);
+      expect(next.id, 'b');
+    });
   });
 
-  test('getPlatformVersion', () async {
-    YuniPhotoView yuniPhotoViewPlugin = YuniPhotoView();
-    MockYuniPhotoViewPlatform fakePlatform = MockYuniPhotoViewPlatform();
-    YuniPhotoViewPlatform.instance = fakePlatform;
+  group('ViewerInteractionConfig', () {
+    test('usesDesktopUi respects force', () {
+      const c = ViewerInteractionConfig(desktopUiMode: ViewerDesktopUiMode.force);
+      expect(c.usesDesktopUi, true);
+    });
 
-    expect(await yuniPhotoViewPlugin.getPlatformVersion(), '42');
+    test('resolveForShell tightens gestures on desktop', () {
+      const c = ViewerInteractionConfig(
+        desktopUiMode: ViewerDesktopUiMode.force,
+        enableHorizontalPaging: true,
+        enableDismissGesture: true,
+        enableInfoGesture: true,
+      );
+      final r = c.resolveForShell();
+      expect(r.enableHorizontalPaging, false);
+      expect(r.enableDismissGesture, false);
+      expect(r.enableInfoGesture, false);
+    });
   });
 }

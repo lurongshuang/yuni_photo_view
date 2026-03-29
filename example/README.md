@@ -1,16 +1,10 @@
-# yuni_photo_view_example
+# yuni_photo_view example
 
-Demonstrates how to use the yuni_photo_view plugin.
+演示 [`yuni_photo_view`](../README.md) 的用法：基础/综合案例、自定义顶栏、Hero、阻尼调试、桌面自定义控件条等。
 
-## Getting Started
+```bash
+flutter pub get
+flutter run
+```
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+macOS 下查看网络图片需在 Runner 的 entitlements 中开启 `com.apple.security.network.client`（本示例已配置）。
