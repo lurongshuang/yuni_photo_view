@@ -604,41 +604,55 @@ class _InfoSheetSurfaceState extends State<_InfoSheetSurface> {
     return Material(
       color: Colors.transparent,
       child: Container(
+        // Clip the child to the Container's (animated) height so that when the
+        // info sheet is only partially revealed the content does not paint
+        // outside its allocated area.
+        clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
           color: bg,
           borderRadius: theme.infoBorderRadius,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Drag handle pill
-            SizedBox(
-              height: 28,
-              child: Center(
-                child: Container(
-                  width: theme.dragHandleSize.width,
-                  height: theme.dragHandleSize.height,
-                  decoration: BoxDecoration(
-                    color: handleColor,
-                    borderRadius: BorderRadius.circular(theme.dragHandleSize.height / 2),
+        // OverflowBox gives the Column a much larger maxHeight than the tight
+        // constraint coming from the Positioned ancestor (which equals sheetH,
+        // potentially only a few pixels during animation start).  This prevents
+        // RenderFlex from throwing an overflow assertion while the Container's
+        // clipBehavior takes care of the actual visual clipping.
+        child: OverflowBox(
+          minHeight: 0,
+          maxHeight: 10000,
+          alignment: Alignment.topCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Drag handle pill
+              SizedBox(
+                height: 28,
+                child: Center(
+                  child: Container(
+                    width: theme.dragHandleSize.width,
+                    height: theme.dragHandleSize.height,
+                    decoration: BoxDecoration(
+                      color: handleColor,
+                      borderRadius:
+                          BorderRadius.circular(theme.dragHandleSize.height / 2),
+                    ),
                   ),
                 ),
               ),
-            ),
 
-            // Business info content — measured after layout.
-            Flexible(
-              child: SingleChildScrollView(
-                // Scrolling is handled by the framework's gesture routing.
-                // Disable native scroll physics to avoid conflicts.
-                physics: const NeverScrollableScrollPhysics(),
-                child: KeyedSubtree(
-                  key: _contentKey,
-                  child: widget.child,
+              // Business info content — measured after layout.
+              Flexible(
+                child: SingleChildScrollView(
+                  // Scrolling is handled by the shell's gesture routing.
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: KeyedSubtree(
+                    key: _contentKey,
+                    child: widget.child,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
