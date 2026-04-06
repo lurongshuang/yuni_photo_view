@@ -78,9 +78,13 @@ export 'src/viewer/media_card_chrome_scope.dart' show MediaCardChromeScope;
 
 // ── 辅助组件 ─────────────────────────────────────────────────────────────────
 /// 建议在 [ViewerPageBuilder] 中包裹图片/视频：矮内容放大铺满，高内容顶对齐裁剪，
-/// 并由 [ViewerPageContext.infoRevealProgress] 驱动居中→贴顶的平滑过渡。
+/// 并由 [ViewerPageContext.infoRevealProgress]驱动居中→贴顶的平滑过渡。
 export 'src/widgets/viewer_media_cover_frame.dart' show ViewerMediaCoverFrame;
 
-/// 在 [pageBuilder] 中可替代原生 [Hero]：默认 flight shuttle 在缩略图 cover 与
+/// 基于 [Hero]：默认 flight shuttle 在缩略图 cover 与
 /// 查看区 contain 之间插值，并可通过 [ViewerHero.shuttleBuilder] 完全自定义。
 export 'src/widgets/viewer_hero.dart' show ViewerHero;
+
+/// 扩散毛玻璃背景组件。
+export 'src/widgets/viewer_diffuse_background.dart'
+    show ViewerDiffuseBackground, ViewerDiffuseBall;

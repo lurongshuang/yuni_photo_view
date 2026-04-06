@@ -59,6 +59,7 @@ class MediaViewer extends StatefulWidget {
     this.topBarBuilder,
     this.bottomBarBuilder,
     this.overlayBuilder,
+    this.backgroundBuilder,
     this.controller,
     this.config = const ViewerInteractionConfig(),
     this.theme = const ViewerTheme(),
@@ -89,6 +90,9 @@ class MediaViewer extends StatefulWidget {
 
   /// 底部固定栏。
   final ViewerBarBuilder? bottomBarBuilder;
+
+  /// 自定义每一页的底层背景（不随内容缩放/位移）。
+  final ViewerBackgroundBuilder? backgroundBuilder;
 
   /// 叠在所有层之上的浮层（默认不参与下拉关闭的透明度联动，由业务自控）。
   final ViewerOverlayBuilder? overlayBuilder;
@@ -127,6 +131,7 @@ class MediaViewer extends StatefulWidget {
     ViewerBarBuilder? topBarBuilder,
     ViewerBarBuilder? bottomBarBuilder,
     ViewerOverlayBuilder? overlayBuilder,
+    ViewerBackgroundBuilder? backgroundBuilder,
     MediaViewerController? controller,
     ViewerInteractionConfig config = const ViewerInteractionConfig(),
     ViewerTheme theme = const ViewerTheme(),
@@ -147,6 +152,7 @@ class MediaViewer extends StatefulWidget {
           topBarBuilder: topBarBuilder,
           bottomBarBuilder: bottomBarBuilder,
           overlayBuilder: overlayBuilder,
+          backgroundBuilder: backgroundBuilder,
           controller: controller,
           config: config,
           theme: theme,
@@ -513,6 +519,7 @@ class _MediaViewerState extends State<MediaViewer>
                       pageBuilder: widget.pageBuilder,
                       infoBuilder: widget.infoBuilder,
                       pageOverlayBuilder: widget.pageOverlayBuilder,
+                      backgroundBuilder: widget.backgroundBuilder,
                       barsVisible: _barsVisible,
                       dismissProgress: progress,
                       screenHeight: screenH,

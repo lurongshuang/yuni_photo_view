@@ -10,6 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  palette_generator: ^0.3.3+7
   video_player: ^2.9.2
   yuni_photo_view:
     path: ../

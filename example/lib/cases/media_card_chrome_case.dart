@@ -58,9 +58,17 @@ class MediaCardChromeCase extends StatelessWidget {
       initialIndex: initialIndex,
       theme: _theme,
       pageBuilder: _buildPage,
+      backgroundBuilder: _buildBackground,
       infoBuilder: _buildInfo,
       topBarBuilder: _buildTopBar,
       bottomBarBuilder: _buildBottomBar,
+    );
+  }
+
+  Widget _buildBackground(BuildContext context, ViewerPageContext pageCtx) {
+    return ViewerDiffuseBackground(
+      url: pageCtx.item.payload as String,
+      pageCtx: pageCtx,
     );
   }
 
@@ -162,6 +170,8 @@ class MediaCardChromeCase extends StatelessWidget {
     );
   }
 }
+
+
 
 class _GridThumb extends StatelessWidget {
   const _GridThumb({required this.item, required this.onTap});

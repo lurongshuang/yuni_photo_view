@@ -189,6 +189,12 @@ typedef ViewerPageBuilder = Widget Function(
   ViewerPageContext pageCtx,
 );
 
+/// 构建每一页背景区（不随图片缩放/平移）。
+typedef ViewerBackgroundBuilder = Widget Function(
+  BuildContext context,
+  ViewerPageContext pageCtx,
+);
+
 /// 构建每一页信息面板内部；若整页不需要可在外层不传 [MediaViewer.infoBuilder]。
 typedef ViewerInfoBuilder = Widget Function(
   BuildContext context,

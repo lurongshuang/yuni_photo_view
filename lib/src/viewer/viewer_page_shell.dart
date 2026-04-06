@@ -49,6 +49,7 @@ class ViewerPageShell extends StatefulWidget {
     required this.config,
     required this.theme,
     required this.pageBuilder,
+    this.backgroundBuilder,
     required this.barsVisible,
     required this.dismissProgress,
     this.infoBuilder,
@@ -67,6 +68,7 @@ class ViewerPageShell extends StatefulWidget {
   final ViewerTheme theme;
 
   final ViewerPageBuilder pageBuilder;
+  final ViewerBackgroundBuilder? backgroundBuilder;
   final ViewerInfoBuilder? infoBuilder;
 
   /// 不参与缩放的单页叠加层（如 Live 角标），在内容之上、全局顶底栏之下。
@@ -307,6 +309,11 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
 
     return Stack(
       children: [
+        if (widget.backgroundBuilder != null)
+          Positioned.fill(
+            child: widget.backgroundBuilder!(ctx, pageCtx),
+          ),
+
         // 主内容视口：高度随信息面板上移变矮；内容顶对齐，底部由 ClipRect 裁切。
         Positioned(
           top: 0,
