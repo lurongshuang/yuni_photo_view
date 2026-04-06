@@ -43,6 +43,7 @@ class ViewerPageShell extends StatefulWidget {
   const ViewerPageShell({
     super.key,
     required this.index,
+    required this.itemCount,
     required this.item,
     required this.infoController,
     required this.pageController,
@@ -61,6 +62,7 @@ class ViewerPageShell extends StatefulWidget {
   });
 
   final int index;
+  final int itemCount;
   final ViewerItem item;
   final InfoSheetController infoController;
   final ViewerPageController pageController;
@@ -264,6 +266,7 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
 
     final pageCtx = ViewerPageContext(
       index: widget.index,
+      itemCount: widget.itemCount,
       item: widget.item,
       infoState: _info.state,
       infoRevealProgress: revealProgress,

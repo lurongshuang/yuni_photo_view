@@ -448,6 +448,7 @@ class _MediaViewerState extends State<MediaViewer>
 
   ViewerBarContext _barCtx(double dismissProgress) => ViewerBarContext(
         index: _currentIndex,
+        itemCount: _itemCount,
         item: _itemAt(_currentIndex),
         infoState: _currentInfoCtrl.state,
         dismissProgress: dismissProgress,
@@ -511,6 +512,7 @@ class _MediaViewerState extends State<MediaViewer>
                     itemBuilder: (_, i) => ViewerPageShell(
                       key: ValueKey('page_$i'),
                       index: i,
+                      itemCount: _itemCount,
                       item: _itemAt(i),
                       infoController: _infoCtrlAt(i),
                       pageController: _pageCtrlAt(i),

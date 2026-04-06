@@ -161,7 +161,7 @@ class MediaCardChromeCase extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              '${barCtx.index + 1} / ${DemoData.images.length}',
+              '${barCtx.index + 1} / ${barCtx.itemCount}',
               style: const TextStyle(color: Colors.white70),
             ),
           ],

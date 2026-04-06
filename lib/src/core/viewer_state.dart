@@ -23,6 +23,7 @@ enum InfoState {
 class ViewerPageContext {
   const ViewerPageContext({
     required this.index,
+    required this.itemCount,
     required this.item,
     required this.infoState,
     required this.infoRevealProgress,
@@ -36,6 +37,9 @@ class ViewerPageContext {
 
   /// 当前页在列表中的下标。
   final int index;
+
+  /// 列表总项数。
+  final int itemCount;
 
   /// 当前页的 [ViewerItem]。
   final ViewerItem item;
@@ -79,6 +83,7 @@ class ViewerPageContext {
 class ViewerBarContext {
   const ViewerBarContext({
     required this.index,
+    required this.itemCount,
     required this.item,
     required this.infoState,
     required this.dismissProgress,
@@ -90,6 +95,9 @@ class ViewerBarContext {
   });
 
   final int index;
+
+  /// 列表总项数。
+  final int itemCount;
   final ViewerItem item;
   final InfoState infoState;
 

@@ -16,20 +16,8 @@ abstract class ViewerItem {
   /// 是否支持信息面板；为 `false` 时该页隐藏面板并关闭对应手势。
   bool get hasInfo;
 
-  /// 可选类型提示（如 `image`、`video`），框架不解析。
-  String? get kind => null;
-
-  /// 通用载荷；默认 `null`，常用 [DefaultViewerItem] 或子类覆盖。
-  Object? get payload => null;
-
-  /// 键值元数据；默认 `null`。
-  Map<String, dynamic>? get meta => null;
-
-  /// 扩展字段；默认 `null`。
-  Object? get extra => null;
-
   @override
-  String toString() => 'ViewerItem(id: $id, kind: $kind, hasInfo: $hasInfo)';
+  String toString() => 'ViewerItem(id: $id, hasInfo: $hasInfo)';
 }
 
 /// 默认具体条目：适合 URL / meta 等通用字段的快速接入；可变副本用 [copyWith]。
@@ -46,16 +34,12 @@ class DefaultViewerItem extends ViewerItem {
   @override
   final String id;
 
-  @override
   final String? kind;
 
-  @override
   final dynamic payload;
 
-  @override
   final Map<String, dynamic>? meta;
 
-  @override
   final dynamic extra;
 
   @override

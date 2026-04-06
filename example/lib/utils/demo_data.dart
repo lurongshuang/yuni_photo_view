@@ -1,5 +1,15 @@
 import 'package:yuni_photo_view/yuni_photo_view.dart';
 
+/// 示例工程专用的扩展：由于框架基类 [ViewerItem] 已精简掉 payload/meta 等字段，
+/// 此扩展方便示例代码在未做强类型判断时，仍能以旧方式快速访问 [DefaultViewerItem] 的字段。
+extension ViewerItemLegacy on ViewerItem {
+  DefaultViewerItem get _asDefault => this as DefaultViewerItem;
+  dynamic get payload => _asDefault.payload;
+  Map<String, dynamic>? get meta => _asDefault.meta;
+  String? get kind => _asDefault.kind;
+  dynamic get extra => _asDefault.extra;
+}
+
 /// 各示例共用的演示数据（网络图片与视频 URL）。
 class DemoData {
   DemoData._();
