@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
 
 import 'interaction_config.dart';
@@ -30,6 +31,7 @@ class ViewerPageContext {
     required this.pageController,
     required this.barsVisible,
     required this.dismissProgress,
+    this.mediaCardClipRadiusListenable,
   });
 
   /// 当前页在列表中的下标。
@@ -62,6 +64,11 @@ class ViewerPageContext {
   ///
   /// 可与页内浮层一起做淡出、位移动画。
   final double dismissProgress;
+
+  /// 主内容卡片圆角半径（动画中）；未启用卡片模式时为 null。
+  ///
+  /// 自定义 [pageBuilder] 可 [ListenableBuilder] 监听后与系统相册圆角一致。
+  final ValueListenable<double>? mediaCardClipRadiusListenable;
 }
 
 // ── 顶栏 / 底栏 / overlay 上下文 ─────────────────────────────────────────────

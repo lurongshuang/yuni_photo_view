@@ -74,6 +74,8 @@ export 'src/core/viewer_theme.dart' show ViewerTheme;
 // ── 主组件 ───────────────────────────────────────────────────────────────────
 export 'src/viewer/media_viewer.dart' show MediaViewer;
 
+export 'src/viewer/media_card_chrome_scope.dart' show MediaCardChromeScope;
+
 // ── 辅助组件 ─────────────────────────────────────────────────────────────────
 /// 建议在 [ViewerPageBuilder] 中包裹图片/视频：矮内容放大铺满，高内容顶对齐裁剪，
 /// 并由 [ViewerPageContext.infoRevealProgress] 驱动居中→贴顶的平滑过渡。

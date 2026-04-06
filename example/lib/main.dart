@@ -9,6 +9,7 @@ import 'cases/desktop_custom_chrome_case.dart';
 import 'cases/full_custom_bar_case.dart';
 import 'cases/hero_case.dart';
 import 'cases/mirrored_info_case.dart';
+import 'cases/media_card_chrome_case.dart';
 import 'cases/minimal_case.dart';
 import 'cases/no_info_case.dart';
 
@@ -46,47 +47,52 @@ class _CaseListPage extends StatelessWidget {
         builder: (_) => const ComprehensiveCase(),
       ),
       _CaseEntry(
-        title: '1. 基础用法',
+        title: '1. 主内容圆角边距',
+        subtitle: '栏全显且未缩放时卡片外框；隐藏栏或放大后动画贴边（ViewerTheme）',
+        builder: (_) => const MediaCardChromeCase(),
+      ),
+      _CaseEntry(
+        title: '2. 基础用法',
         subtitle: '图片列表 + 默认 info + 默认顶栏',
         builder: (_) => const BasicCase(),
       ),
       _CaseEntry(
-        title: '2. 最简集成',
+        title: '3. 最简集成',
         subtitle: '仅 pageBuilder，无 info/bar',
         builder: (_) => const MinimalCase(),
       ),
       _CaseEntry(
-        title: '3. 自定义 Info 面板',
+        title: '4. 自定义 Info 面板',
         subtitle: '丰富的 EXIF + 地图占位 + 长内容上滑',
         builder: (_) => const CustomInfoCase(),
       ),
       _CaseEntry(
-        title: '4. 无 Info 页面',
+        title: '5. 无 Info 页面',
         subtitle: 'hasInfo=false 时手势被禁用',
         builder: (_) => const NoInfoCase(),
       ),
       _CaseEntry(
-        title: '5. 自定义顶/底栏',
+        title: '6. 自定义顶/底栏',
         subtitle: '渐变顶栏、缩略图底栏、dismiss 透明联动',
         builder: (_) => const FullCustomBarCase(),
       ),
       _CaseEntry(
-        title: '6. Hero 动画',
+        title: '7. Hero 动画',
         subtitle: '从列表缩略图进入，返回时 Hero 回程',
         builder: (_) => const HeroCase(),
       ),
       _CaseEntry(
-        title: '7. 阻尼参数调试',
+        title: '8. 阻尼参数调试',
         subtitle: '实时滑块调整三类阻尼系数',
         builder: (_) => const DampingCase(),
       ),
       _CaseEntry(
-        title: '8. Info 镜像同步',
+        title: '9. Info 镜像同步',
         subtitle: 'infoSyncMode=mirrored，翻页保持展开',
         builder: (_) => const MirroredInfoCase(),
       ),
       _CaseEntry(
-        title: '9. 桌面自定义控件条',
+        title: '10. 桌面自定义控件条',
         subtitle: 'desktopChromeBuilder + 业务按钮示例（force 模式全平台可预览）',
         builder: (_) => const DesktopCustomChromeCase(),
       ),

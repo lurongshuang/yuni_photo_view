@@ -106,16 +106,6 @@ cd example && flutter run
 
 ---
 
-## 维护者：发布到 pub.dev
-
-1. 保持 Git 工作区干净；若存在 **ImmichFrame** 等「已提交又被 ignore」的目录，请先理顺（移出版本库或取消忽略）。
-2. 执行 `flutter test`。
-3. `dart pub publish --dry-run` — 压缩包应在约数百 KB（`.pubignore` 已排除 `build/` 等）。
-4. 在 [pub.dev](https://pub.dev/) 注册并登录：`dart pub login`。
-5. `dart pub publish`，按浏览器提示确认。
-
----
-
 ## 许可证
 
 MIT — 见 [LICENSE](LICENSE)。

@@ -18,6 +18,10 @@ class ViewerTheme {
     this.infoShowCurve = Curves.easeOutCubic,
     this.infoHideCurve = Curves.easeInOutCubic,
     this.dismissSnapBackCurve = Curves.easeOutCubic,
+    this.mediaCardInset = EdgeInsets.zero,
+    this.mediaCardBorderRadius = 0,
+    this.mediaCardAnimationDuration = const Duration(milliseconds: 280),
+    this.mediaCardAnimationCurve = Curves.easeInOutCubic,
   });
 
   // ── 背景 ───────────────────────────────────────────────────────────────────
@@ -61,6 +65,30 @@ class ViewerTheme {
   /// 下拉回弹曲线。
   final Curve dismissSnapBackCurve;
 
+  // ── 主内容「卡片」外框（相册风格）──────────────────────────────────────────
+
+  /// 顶栏、底栏均显示且当前页未缩放时，主内容区相对视口的外边距。
+  ///
+  /// 与 [mediaCardBorderRadius] 同时为默认零时，不启用该效果。
+  ///
+  /// **实现位置**：在 PhotoView 缩放层**之外**包裹，边距与圆角不随双指缩放变形。
+  final EdgeInsets mediaCardInset;
+
+  /// 与 [mediaCardInset] 同时生效：圆角作用在 [ViewerMediaCoverFrame] 绘制的**图片外接矩形**上，
+  /// 而非整段视口高度（避免「整屏灰块套小图」）。
+  ///
+  /// 自定义媒体请用 [MediaCardChromeScope] 读取插值半径后自行 [ClipRRect]。
+  final double mediaCardBorderRadius;
+
+  /// 在「卡片模式」与「铺满视口」之间过渡的时长。
+  ///
+  /// 当用户隐藏顶底栏或内容进入放大状态（[ViewerPageController.isZoomed]）时，
+  /// 边距与圆角动画归零；恢复栏显且缩放回默认后还原。
+  final Duration mediaCardAnimationDuration;
+
+  /// [mediaCardAnimationDuration] 使用的曲线。
+  final Curve mediaCardAnimationCurve;
+
   // ── 派生色 ─────────────────────────────────────────────────────────────────
 
   /// 实际使用的信息面板背景：若未指定 [infoBackgroundColor] 则用主题 `surface`。
@@ -88,6 +116,10 @@ class ViewerTheme {
     Curve? infoShowCurve,
     Curve? infoHideCurve,
     Curve? dismissSnapBackCurve,
+    EdgeInsets? mediaCardInset,
+    double? mediaCardBorderRadius,
+    Duration? mediaCardAnimationDuration,
+    Curve? mediaCardAnimationCurve,
   }) {
     return ViewerTheme(
       backgroundColor: backgroundColor ?? this.backgroundColor,
@@ -102,6 +134,13 @@ class ViewerTheme {
       infoShowCurve: infoShowCurve ?? this.infoShowCurve,
       infoHideCurve: infoHideCurve ?? this.infoHideCurve,
       dismissSnapBackCurve: dismissSnapBackCurve ?? this.dismissSnapBackCurve,
+      mediaCardInset: mediaCardInset ?? this.mediaCardInset,
+      mediaCardBorderRadius:
+          mediaCardBorderRadius ?? this.mediaCardBorderRadius,
+      mediaCardAnimationDuration:
+          mediaCardAnimationDuration ?? this.mediaCardAnimationDuration,
+      mediaCardAnimationCurve:
+          mediaCardAnimationCurve ?? this.mediaCardAnimationCurve,
     );
   }
 }

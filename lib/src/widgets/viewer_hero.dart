@@ -53,6 +53,7 @@ class ViewerHero extends StatelessWidget {
     required this.child,
     required this.imageUrl,
     this.thumbnailCornerRadius = 8.0,
+    this.viewCornerRadius = 0.0,
     this.shuttleBuilder,
     super.key,
   });
@@ -68,6 +69,10 @@ class ViewerHero extends StatelessWidget {
 
   /// 与列表/网格侧 ClipRRect 圆角保持一致，默认 `8.0`。
   final double thumbnailCornerRadius;
+  
+  /// 到达查看区一端时的圆角，默认 `0.0`。
+  /// 若设置了 [ViewerTheme.mediaCardBorderRadius]，建议传入该值以消除闪烁。
+  final double viewCornerRadius;
 
   /// 完全自定义飞行画面（可选）。
   /// `animation.value`：push 0→1，pop 1→0。
@@ -113,6 +118,7 @@ class ViewerHero extends StatelessWidget {
       imageUrl: imageUrl,
       animation: animation,
       thumbnailCornerRadius: thumbnailCornerRadius,
+      viewCornerRadius: viewCornerRadius,
       thumbSize: thumbSize,
       viewerSize: viewerSize,
     );
@@ -126,6 +132,7 @@ class _HeroShuttleWidget extends StatefulWidget {
     required this.imageUrl,
     required this.animation,
     required this.thumbnailCornerRadius,
+    required this.viewCornerRadius,
     required this.thumbSize,
     required this.viewerSize,
   });
@@ -133,6 +140,7 @@ class _HeroShuttleWidget extends StatefulWidget {
   final String imageUrl;
   final Animation<double> animation;
   final double thumbnailCornerRadius;
+  final double viewCornerRadius;
 
   /// 缩略图端的布局尺寸（用于计算 cover scale 锚点）。
   final Size thumbSize;
@@ -195,7 +203,11 @@ class _HeroShuttleWidgetState extends State<_HeroShuttleWidget> {
       animation: widget.animation,
       builder: (_, __) {
         final t = widget.animation.value.clamp(0.0, 1.0);
-        final radius = widget.thumbnailCornerRadius * (1.0 - t);
+        final radius = ui.lerpDouble(
+          widget.thumbnailCornerRadius,
+          widget.viewCornerRadius,
+          t,
+        )!;
 
         return ClipRRect(
           borderRadius: BorderRadius.circular(radius),
@@ -204,6 +216,7 @@ class _HeroShuttleWidgetState extends State<_HeroShuttleWidget> {
                   painter: _ScaleInterpolationPainter(
                     image: _image!,
                     t: t,
+                    radius: radius,
                     thumbSize: widget.thumbSize,
                     viewerSize: widget.viewerSize,
                   ),
@@ -239,6 +252,7 @@ class _ScaleInterpolationPainter extends CustomPainter {
   const _ScaleInterpolationPainter({
     required this.image,
     required this.t,
+    required this.radius,
     required this.thumbSize,
     required this.viewerSize,
   });
@@ -248,6 +262,9 @@ class _ScaleInterpolationPainter extends CustomPainter {
   /// 0 = 缩略图端（cover），1 = viewer 端（contain）。
   /// push: 0→1；pop: 1→0。
   final double t;
+
+  /// 当前圆角半径。
+  final double radius;
 
   final Size thumbSize;
   final Size viewerSize;
@@ -276,13 +293,26 @@ class _ScaleInterpolationPainter extends CustomPainter {
     final dx = (size.width - drawW) / 2.0;
     final dy = (size.height - drawH) / 2.0;
 
+    canvas.save();
     canvas.clipRect(Offset.zero & size);
+
+    // 计算当前图片绘制矩形并应用圆角裁剪：
+    // 这能确保在 contain 模式下，圆角跟随图片边缘而非视口。
+    if (radius > 0.5) {
+      final imgRect = Rect.fromLTWH(dx, dy, drawW, drawH);
+      canvas.clipRRect(RRect.fromRectAndRadius(
+        imgRect,
+        Radius.circular(radius),
+      ));
+    }
+
     canvas.drawImageRect(
       image,
       Rect.fromLTWH(0, 0, imgW, imgH),
       Rect.fromLTWH(dx, dy, drawW, drawH),
       Paint()..filterQuality = FilterQuality.medium,
     );
+    canvas.restore();
   }
 
   /// cover：取 max(scaleX, scaleY)，图片填满 bounds（超出部分裁切）。
@@ -305,6 +335,7 @@ class _ScaleInterpolationPainter extends CustomPainter {
   bool shouldRepaint(_ScaleInterpolationPainter old) =>
       old.image != image ||
       old.t != t ||
+      old.radius != radius ||
       old.thumbSize != thumbSize ||
       old.viewerSize != viewerSize;
 }

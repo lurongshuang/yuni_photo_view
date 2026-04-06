@@ -1,3 +1,5 @@
+import 'dart:ui' show lerpDouble;
+
 import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
 
@@ -6,6 +8,7 @@ import '../core/viewer_item.dart';
 import '../core/viewer_state.dart';
 import '../core/viewer_theme.dart';
 import '../info_sheet/info_sheet_controller.dart';
+import 'media_card_chrome_scope.dart';
 
 // ── 竖向手势模式 ────────────────────────────────────────────────────────────
 
@@ -93,6 +96,9 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   _GestureMode _gestureMode = _GestureMode.pending;
   double _dismissRawOffset = 0;
 
+  /// 卡片圆角半径；与 [_AnimatedMediaCardChrome] 动画同步，供 [MediaCardChromeScope] / [ViewerPageContext] 使用。
+  ValueNotifier<double>? _mediaCardClipNotifier;
+
   // 便于壳层在需要时对缩放包装调用 reset（例如翻页复用）。
   final GlobalKey<_ZoomableMediaWrapperState> _zoomKey = GlobalKey();
 
@@ -102,6 +108,40 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   ViewerInteractionConfig get _cfg => widget.config;
 
   bool get _hasInfo => widget.item.hasInfo && widget.infoBuilder != null;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_mediaCardChromeEnabled(widget.theme)) {
+      _mediaCardClipNotifier =
+          ValueNotifier<double>(_mediaCardInitialClipRadius());
+    }
+  }
+
+  @override
+  void dispose() {
+    _mediaCardClipNotifier?.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(ViewerPageShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final wasOn = _mediaCardChromeEnabled(oldWidget.theme);
+    final on = _mediaCardChromeEnabled(widget.theme);
+    if (!wasOn && on) {
+      _mediaCardClipNotifier =
+          ValueNotifier<double>(_mediaCardInitialClipRadius());
+    } else if (wasOn && !on) {
+      _mediaCardClipNotifier?.dispose();
+      _mediaCardClipNotifier = null;
+    }
+  }
+
+  double _mediaCardInitialClipRadius() {
+    final immersed = !widget.barsVisible || widget.pageController.isZoomed;
+    return immersed ? 0.0 : widget.theme.mediaCardBorderRadius;
+  }
 
   double _resolveScreenHeight(BuildContext ctx) =>
       widget.screenHeight ?? MediaQuery.of(ctx).size.height;
@@ -230,9 +270,40 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       pageController: widget.pageController,
       barsVisible: widget.barsVisible,
       dismissProgress: widget.dismissProgress,
+      mediaCardClipRadiusListenable: _mediaCardClipNotifier,
     );
 
     final pageOverlay = widget.pageOverlayBuilder?.call(ctx, pageCtx);
+
+    final zoomCore = _ZoomableMediaWrapper(
+      key: _zoomKey,
+      enabled: _cfg.enableZoom && revealProgress < 0.05,
+      enableDoubleTap: _cfg.enableDoubleTapZoom,
+      pageController: widget.pageController,
+      onSingleTap: _cfg.enableTapToToggleBars ? widget.onContentTap : null,
+      child: widget.pageBuilder(ctx, pageCtx),
+    );
+
+    final theme = widget.theme;
+    Widget mediaZoom = zoomCore;
+    if (_mediaCardChromeEnabled(theme)) {
+      mediaZoom = ListenableBuilder(
+        listenable: widget.pageController,
+        builder: (context, _) {
+          final immersed =
+              !widget.barsVisible || widget.pageController.isZoomed;
+          return _AnimatedMediaCardChrome(
+            immersed: immersed,
+            inset: theme.mediaCardInset,
+            borderRadius: theme.mediaCardBorderRadius,
+            duration: theme.mediaCardAnimationDuration,
+            curve: theme.mediaCardAnimationCurve,
+            clipRadiusNotifier: _mediaCardClipNotifier!,
+            child: zoomCore,
+          );
+        },
+      );
+    }
 
     return Stack(
       children: [
@@ -244,15 +315,7 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
           height: contentH,
           child: _MediaViewportWrapper(
             revealProgress: revealProgress,
-            child: _ZoomableMediaWrapper(
-              key: _zoomKey,
-              enabled: _cfg.enableZoom && revealProgress < 0.05,
-              enableDoubleTap: _cfg.enableDoubleTapZoom,
-              pageController: widget.pageController,
-              onSingleTap:
-                  _cfg.enableTapToToggleBars ? widget.onContentTap : null,
-              child: widget.pageBuilder(ctx, pageCtx),
-            ),
+            child: mediaZoom,
           ),
         ),
 
@@ -281,6 +344,114 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
             ),
           ),
       ],
+    );
+  }
+}
+
+bool _mediaCardChromeEnabled(ViewerTheme theme) {
+  final i = theme.mediaCardInset;
+  return theme.mediaCardBorderRadius > 0 ||
+      i.left > 0 ||
+      i.top > 0 ||
+      i.right > 0 ||
+      i.bottom > 0;
+}
+
+// ── 主内容「卡片」外框动画（在 PhotoView 外，不随缩放变形）────────────────────
+
+class _AnimatedMediaCardChrome extends StatefulWidget {
+  const _AnimatedMediaCardChrome({
+    required this.immersed,
+    required this.inset,
+    required this.borderRadius,
+    required this.duration,
+    required this.curve,
+    required this.clipRadiusNotifier,
+    required this.child,
+  });
+
+  /// true：铺满视口（无外边距、无圆角）。
+  final bool immersed;
+
+  final EdgeInsets inset;
+  final double borderRadius;
+  final Duration duration;
+  final Curve curve;
+
+  /// 与 [_curveAnim] 同步写入，供 [MediaCardChromeScope] 监听。
+  final ValueNotifier<double> clipRadiusNotifier;
+
+  final Widget child;
+
+  @override
+  State<_AnimatedMediaCardChrome> createState() =>
+      _AnimatedMediaCardChromeState();
+}
+
+class _AnimatedMediaCardChromeState extends State<_AnimatedMediaCardChrome>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final CurvedAnimation _curveAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: widget.duration);
+    _curveAnim = CurvedAnimation(parent: _controller, curve: widget.curve);
+    _curveAnim.addListener(_syncClipRadius);
+    _controller.value = widget.immersed ? 1.0 : 0.0;
+    _syncClipRadius();
+  }
+
+  void _syncClipRadius() {
+    final r = lerpDouble(widget.borderRadius, 0.0, _curveAnim.value)!;
+    if (widget.clipRadiusNotifier.value != r) {
+      widget.clipRadiusNotifier.value = r;
+    }
+  }
+
+  @override
+  void didUpdateWidget(_AnimatedMediaCardChrome oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.duration != widget.duration) {
+      _controller.duration = widget.duration;
+    }
+    if (oldWidget.immersed != widget.immersed) {
+      if (widget.immersed) {
+        _controller.forward();
+      } else {
+        _controller.reverse();
+      }
+    }
+    if (oldWidget.borderRadius != widget.borderRadius) {
+      _syncClipRadius();
+    }
+  }
+
+  @override
+  void dispose() {
+    _curveAnim.removeListener(_syncClipRadius);
+    _curveAnim.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _curveAnim,
+      builder: (context, child) {
+        final v = _curveAnim.value;
+        final pad = EdgeInsets.lerp(widget.inset, EdgeInsets.zero, v)!;
+        return Padding(
+          padding: pad,
+          child: MediaCardChromeScope(
+            clipRadiusListenable: widget.clipRadiusNotifier,
+            child: child!,
+          ),
+        );
+      },
+      child: widget.child,
     );
   }
 }
@@ -603,48 +774,52 @@ class _InfoSheetSurfaceState extends State<_InfoSheetSurface> {
 
     return Material(
       color: Colors.transparent,
-      child: Container(
-        // 按当前面板高度裁剪，避免刚拉起几条像素时内容画到外面。
-        clipBehavior: Clip.hardEdge,
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: theme.infoBorderRadius,
-        ),
-        // Positioned 在动画初期可能只给很小高度，OverflowBox 给 Column 更大 maxHeight，
-        // 避免 RenderFlex 断言溢出；真正可见区域仍由 clip 限制。
-        child: OverflowBox(
-          minHeight: 0,
-          maxHeight: 10000,
-          alignment: Alignment.topCenter,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                height: 28,
-                child: Center(
-                  child: Container(
-                    width: theme.dragHandleSize.width,
-                    height: theme.dragHandleSize.height,
-                    decoration: BoxDecoration(
-                      color: handleColor,
-                      borderRadius: BorderRadius.circular(
-                          theme.dragHandleSize.height / 2),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // 使用 Positioned 传入的有限高度，避免 Column+Flexible 在 OverflowBox 下出现
+          // size: MISSING（上滑 info 时 hit test 崩溃）。
+          final maxH = constraints.maxHeight.clamp(0.0, double.infinity);
+          // 动画初期 sheet 高度可能小于拖条设计高度 28，固定 28 会导致底部溢出。
+          final handleH = maxH <= 0 ? 0.0 : (maxH < 28 ? maxH : 28.0);
+          return Container(
+            width: constraints.maxWidth,
+            height: constraints.maxHeight,
+            clipBehavior: Clip.hardEdge,
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: theme.infoBorderRadius,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (handleH > 0)
+                  SizedBox(
+                    height: handleH,
+                    child: Center(
+                      child: Container(
+                        width: theme.dragHandleSize.width,
+                        height: theme.dragHandleSize.height,
+                        decoration: BoxDecoration(
+                          color: handleColor,
+                          borderRadius: BorderRadius.circular(
+                              theme.dragHandleSize.height / 2),
+                        ),
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    physics: const NeverScrollableScrollPhysics(),
+                    child: KeyedSubtree(
+                      key: _contentKey,
+                      child: widget.child,
                     ),
                   ),
                 ),
-              ),
-              Flexible(
-                child: SingleChildScrollView(
-                  physics: const NeverScrollableScrollPhysics(),
-                  child: KeyedSubtree(
-                    key: _contentKey,
-                    child: widget.child,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
