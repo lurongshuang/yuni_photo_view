@@ -51,7 +51,7 @@ class ViewerHero extends StatelessWidget {
   const ViewerHero({
     required this.tag,
     required this.child,
-    required this.imageUrl,
+    required this.imageProvider,
     this.thumbnailCornerRadius = 8.0,
     this.viewCornerRadius = 0.0,
     this.shuttleBuilder,
@@ -64,8 +64,8 @@ class ViewerHero extends StatelessWidget {
   /// 查看页内正常展示的内容（多为 [ViewerMediaCoverFrame] 包一层图片）。
   final Widget child;
 
-  /// 图片网络地址。飞行期间直接从已有缓存读取，无需重新加载。
-  final String imageUrl;
+  /// 图片提供者。飞行期间直接从已有缓存读取，无需重新加载。
+  final ImageProvider imageProvider;
 
   /// 与列表/网格侧 ClipRRect 圆角保持一致，默认 `8.0`。
   final double thumbnailCornerRadius;
@@ -115,7 +115,7 @@ class ViewerHero extends StatelessWidget {
     }
 
     return _HeroShuttleWidget(
-      imageUrl: imageUrl,
+      imageProvider: imageProvider,
       animation: animation,
       thumbnailCornerRadius: thumbnailCornerRadius,
       viewCornerRadius: viewCornerRadius,
@@ -129,7 +129,7 @@ class ViewerHero extends StatelessWidget {
 
 class _HeroShuttleWidget extends StatefulWidget {
   const _HeroShuttleWidget({
-    required this.imageUrl,
+    required this.imageProvider,
     required this.animation,
     required this.thumbnailCornerRadius,
     required this.viewCornerRadius,
@@ -137,7 +137,7 @@ class _HeroShuttleWidget extends StatefulWidget {
     required this.viewerSize,
   });
 
-  final String imageUrl;
+  final ImageProvider imageProvider;
   final Animation<double> animation;
   final double thumbnailCornerRadius;
   final double viewCornerRadius;
@@ -168,7 +168,7 @@ class _HeroShuttleWidgetState extends State<_HeroShuttleWidget> {
   /// 实践中图片已在列表页和 viewer 中展示过，缓存命中率接近 100%，
   /// 同步路径通常在第一帧就能拿到图片，不会有白帧。
   void _resolveImage() {
-    final provider = NetworkImage(widget.imageUrl);
+    final provider = widget.imageProvider;
     final stream = provider.resolve(const ImageConfiguration());
     _stream = stream;
 
@@ -223,8 +223,8 @@ class _HeroShuttleWidgetState extends State<_HeroShuttleWidget> {
                   child: const SizedBox.expand(),
                 )
               // 缓存未命中降级：contain 单层，无扩散
-              : Image.network(
-                  widget.imageUrl,
+              : Image(
+                  image: widget.imageProvider,
                   fit: BoxFit.contain,
                   gaplessPlayback: true,
                 ),

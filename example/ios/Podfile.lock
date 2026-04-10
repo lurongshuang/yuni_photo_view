@@ -1,27 +1,28 @@
 PODS:
   - Flutter (1.0.0)
-  - integration_test (0.0.1):
+  - video_player_avfoundation (0.0.1):
     - Flutter
+    - FlutterMacOS
   - yuni_photo_view (0.0.1):
     - Flutter
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
-  - integration_test (from `.symlinks/plugins/integration_test/ios`)
+  - video_player_avfoundation (from `.symlinks/plugins/video_player_avfoundation/darwin`)
   - yuni_photo_view (from `.symlinks/plugins/yuni_photo_view/ios`)
 
 EXTERNAL SOURCES:
   Flutter:
     :path: Flutter
-  integration_test:
-    :path: ".symlinks/plugins/integration_test/ios"
+  video_player_avfoundation:
+    :path: ".symlinks/plugins/video_player_avfoundation/darwin"
   yuni_photo_view:
     :path: ".symlinks/plugins/yuni_photo_view/ios"
 
 SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
-  yuni_photo_view: 04010852b82e0125e5856d5510b955f893178d54
+  video_player_avfoundation: 7993f492ae0bd77edaea24d9dc051d8bb2cd7c86
+  yuni_photo_view: 47be617b22eb22abb914180e968d6f209a760334
 
 PODFILE CHECKSUM: 3c63482e143d1b91d2d2560aee9fb04ecc74ac7e
 

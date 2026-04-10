@@ -61,7 +61,7 @@ class HeroCase extends StatelessWidget {
         // thumbnailCornerRadius 必须与列表缩略图的 ClipRRect 圆角一致（本例为 8）。
         return ViewerHero(
           tag: 'hero_${pageCtx.item.id}',
-          imageUrl: url,
+          imageProvider: NetworkImage(url),
           thumbnailCornerRadius: 8,
           child: ViewerMediaCoverFrame(
             revealProgress: pageCtx.infoRevealProgress,

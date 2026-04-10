@@ -104,7 +104,7 @@ await MediaViewer.open(
 #### **ViewerHero**
 用于实现从缩略图到大图查看器的极致平滑过渡。
 - `tag`: 唯一标识。
-- `imageUrl`: 插值过程中使用的占位图 URL（通常是缩略图）。
+- `imageProvider`: 用于插值的图片提供者（如 `NetworkImage(url)`）。
 - `thumbnailCornerRadius`: 列表中缩略图的圆角。
 - `viewCornerRadius`: 进入大图模式后的圆角（通常设为 18~20）。
 

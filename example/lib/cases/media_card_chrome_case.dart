@@ -76,7 +76,7 @@ class MediaCardChromeCase extends StatelessWidget {
     final url = pageCtx.item.payload as String;
     return ViewerHero(
       tag: 'hero_card_${pageCtx.item.id}',
-      imageUrl: url,
+      imageProvider: NetworkImage(url),
       thumbnailCornerRadius: 4,
       viewCornerRadius: 18,
       child: ViewerMediaCoverFrame(
