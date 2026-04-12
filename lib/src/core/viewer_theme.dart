@@ -22,6 +22,10 @@ class ViewerTheme {
     this.mediaCardBorderRadius = 0,
     this.mediaCardAnimationDuration = const Duration(milliseconds: 280),
     this.mediaCardAnimationCurve = Curves.easeInOutCubic,
+    this.barsToggleDuration = const Duration(milliseconds: 200),
+    this.barsToggleCurve = Curves.easeOutCubic,
+    this.zoomDuration = const Duration(milliseconds: 250),
+    this.zoomCurve = Curves.easeInOutCubic,
   });
 
   // ── 背景 ───────────────────────────────────────────────────────────────────
@@ -89,6 +93,18 @@ class ViewerTheme {
   /// [mediaCardAnimationDuration] 使用的曲线。
   final Curve mediaCardAnimationCurve;
 
+  /// 单击内容切换顶栏、底栏显隐的时长。
+  final Duration barsToggleDuration;
+
+  /// [barsToggleDuration] 使用的曲线。
+  final Curve barsToggleCurve;
+
+  /// 双击缩放动画的时长。
+  final Duration zoomDuration;
+
+  /// [zoomDuration] 使用的曲线。
+  final Curve zoomCurve;
+
   // ── 派生色 ─────────────────────────────────────────────────────────────────
 
   /// 实际使用的信息面板背景：若未指定 [infoBackgroundColor] 则用主题 `surface`。
@@ -141,6 +157,10 @@ class ViewerTheme {
           mediaCardAnimationDuration ?? this.mediaCardAnimationDuration,
       mediaCardAnimationCurve:
           mediaCardAnimationCurve ?? this.mediaCardAnimationCurve,
+      barsToggleDuration: barsToggleDuration ?? this.barsToggleDuration,
+      barsToggleCurve: barsToggleCurve ?? this.barsToggleCurve,
+      zoomDuration: zoomDuration ?? this.zoomDuration,
+      zoomCurve: zoomCurve ?? this.zoomCurve,
     );
   }
 }

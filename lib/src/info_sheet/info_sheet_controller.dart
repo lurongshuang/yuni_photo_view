@@ -17,7 +17,10 @@ class InfoSheetController extends ChangeNotifier {
     required TickerProvider vsync,
     required this.config,
     required this.theme,
+    InfoState initialState = InfoState.hidden,
   }) {
+    _state = initialState;
+    _sheetHeight = initialState == InfoState.shown ? defaultShownHeight : 0;
     _animController = AnimationController(vsync: vsync)
       ..addListener(_onAnimTick);
   }
@@ -34,12 +37,22 @@ class InfoSheetController extends ChangeNotifier {
   static const double _dragHandleRegionHeight = 32.0;
 
   void setScreenHeight(double h) {
-    if (_screenHeight == h) return;
+    final oldDefault = defaultShownHeight;
     _screenHeight = h;
-    // 已在展开态时若最大高度变小，需重新夹紧当前高度。
-    if (_state == InfoState.shown && _sheetHeight > maxShownHeight) {
-      _sheetHeight = maxShownHeight;
-      notifyListeners();
+    final newDefault = defaultShownHeight;
+
+    if (_state == InfoState.shown) {
+      // 场景 A：初次获取屏幕高度（之前是 0），且默认就是展示态 -> 直接对齐
+      // 注意：此处不调用 notifyListeners()，因为调用方（ViewerPageShell.build）正处于 build 阶段，
+      // 随后的 ListenableBuilder 自然会读取最新值。若调用则会引发 setState() during build 报错。
+      if (oldDefault <= 0 && newDefault > 0) {
+        _sheetHeight = newDefault;
+      }
+      // 场景 B：屏幕尺寸变化（如旋转），若当前高度超出新上限，需夹紧
+      else if (_sheetHeight > maxShownHeight) {
+        _sheetHeight = maxShownHeight;
+        notifyListeners();
+      }
     }
   }
 

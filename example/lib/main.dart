@@ -12,6 +12,7 @@ import 'cases/mirrored_info_case.dart';
 import 'cases/media_card_chrome_case.dart';
 import 'cases/minimal_case.dart';
 import 'cases/no_info_case.dart';
+import 'cases/extensibility_case.dart';
 
 void main() {
   runApp(const ExampleApp());
@@ -95,6 +96,11 @@ class _CaseListPage extends StatelessWidget {
         title: '10. 桌面自定义控件条',
         subtitle: 'desktopChromeBuilder + 业务按钮示例（force 模式全平台可预览）',
         builder: (_) => const DesktopCustomChromeCase(),
+      ),
+      _CaseEntry(
+        title: '11. 扩展性：插槽与动效魔改',
+        subtitle: 'underMediaBuilder 立体投影、自定义 Duration 与特制 extra 水印',
+        builder: (_) => const ExtensibilityCase(),
       ),
     ];
 

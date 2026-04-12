@@ -16,6 +16,10 @@ abstract class ViewerItem {
   /// 是否支持信息面板；为 `false` 时该页隐藏面板并关闭对应手势。
   bool get hasInfo;
 
+  /// 业务扩展负载：允许开发者在 [ViewerItem] 中携带特定的业务元数据。
+  /// [ViewerPageContext] 和 [ViewerBarContext] 会同步透传此字段。
+  dynamic get extra => null;
+
   @override
   String toString() => 'ViewerItem(id: $id, hasInfo: $hasInfo)';
 }

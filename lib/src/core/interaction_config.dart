@@ -37,6 +37,7 @@ class ViewerInteractionConfig {
     this.desktopAllowSwipePaging = false,
     this.desktopAllowDismissDrag = false,
     this.desktopAllowInfoDrag = false,
+    this.verticalDragMinStartDistance = 3.0,
   });
 
   // ── 阻尼（0～1，越大越「拖不动」）────────────────────────────────────────
@@ -123,6 +124,10 @@ class ViewerInteractionConfig {
   /// 桌面模式下是否仍允许上滑 / 拖动手势控制信息面板（默认 false，建议用信息按钮）。
   final bool desktopAllowInfoDrag;
 
+  /// 触发垂直手势识别所需的最小初始位移（像素）。
+  /// 增加此值可减少横滑翻页时的纵向误触。
+  final double verticalDragMinStartDistance;
+
   /// 是否启用桌面布局与控件区（由 [desktopUiMode] 与宿主平台决定）。
   bool get usesDesktopUi => resolveViewerDesktopUi(desktopUiMode);
 
@@ -199,6 +204,8 @@ class ViewerInteractionConfig {
       desktopAllowDismissDrag:
           desktopAllowDismissDrag ?? this.desktopAllowDismissDrag,
       desktopAllowInfoDrag: desktopAllowInfoDrag ?? this.desktopAllowInfoDrag,
+      verticalDragMinStartDistance:
+          verticalDragMinStartDistance ?? this.verticalDragMinStartDistance,
     );
   }
 }

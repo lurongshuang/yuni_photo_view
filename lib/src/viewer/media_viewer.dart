@@ -68,6 +68,7 @@ class MediaViewer extends StatefulWidget {
     this.onDismiss,
     this.onBarsVisibilityChanged,
     this.desktopChromeBuilder,
+    this.underMediaBuilder,
   });
 
   /// 要展示的数据列表。
@@ -93,6 +94,9 @@ class MediaViewer extends StatefulWidget {
 
   /// 自定义每一页的底层背景（不随内容缩放/位移）。
   final ViewerBackgroundBuilder? backgroundBuilder;
+
+  /// 在媒体缩放层之下、背景层之上的叠加层。
+  final ViewerPageOverlayBuilder? underMediaBuilder;
 
   /// 叠在所有层之上的浮层（默认不参与下拉关闭的透明度联动，由业务自控）。
   final ViewerOverlayBuilder? overlayBuilder;
@@ -140,6 +144,7 @@ class MediaViewer extends StatefulWidget {
     VoidCallback? onDismiss,
     ValueChanged<bool>? onBarsVisibilityChanged,
     ViewerDesktopChromeBuilder? desktopChromeBuilder,
+    ViewerPageOverlayBuilder? underMediaBuilder,
   }) {
     return Navigator.of(context).push<T>(
       _ViewerPageRoute<T>(
@@ -149,10 +154,8 @@ class MediaViewer extends StatefulWidget {
           initialIndex: initialIndex,
           infoBuilder: infoBuilder,
           pageOverlayBuilder: pageOverlayBuilder,
-          topBarBuilder: topBarBuilder,
-          bottomBarBuilder: bottomBarBuilder,
-          overlayBuilder: overlayBuilder,
           backgroundBuilder: backgroundBuilder,
+          underMediaBuilder: underMediaBuilder,
           controller: controller,
           config: config,
           theme: theme,
@@ -160,6 +163,9 @@ class MediaViewer extends StatefulWidget {
           onInfoStateChanged: onInfoStateChanged,
           onDismiss: onDismiss,
           onBarsVisibilityChanged: onBarsVisibilityChanged,
+          topBarBuilder: topBarBuilder,
+          bottomBarBuilder: bottomBarBuilder,
+          overlayBuilder: overlayBuilder,
           desktopChromeBuilder: desktopChromeBuilder,
         ),
       ),
@@ -191,6 +197,10 @@ class _MediaViewerState extends State<MediaViewer>
 
   // 顶底栏显隐（单击内容切换）
   bool _barsVisible = true;
+
+  // 镜像同步状态中心
+  InfoState _mirroredInfoState = InfoState.hidden;
+  bool _isBroadcastingInfoState = false;
 
   // ── 生命周期 ─────────────────────────────────────────────────────────────
 
@@ -257,8 +267,40 @@ class _MediaViewerState extends State<MediaViewer>
         vsync: this,
         config: widget.config,
         theme: widget.theme,
-      ),
+        initialState: widget.config.infoSyncMode == InfoSyncMode.mirrored
+            ? _mirroredInfoState
+            : InfoState.hidden,
+      )..addListener(() {
+          if (widget.config.infoSyncMode != InfoSyncMode.mirrored) return;
+          if (_isBroadcastingInfoState) return;
+
+          final ctrl = _infoControllers[i];
+          if (ctrl == null) return;
+
+          // 仅同步稳定的状态（动画结束或被命令式调用后）
+          if (ctrl.state != _mirroredInfoState && !ctrl.isDragging) {
+            _broadcastInfoState(ctrl.state);
+          }
+        }),
     );
+  }
+
+  void _broadcastInfoState(InfoState newState) {
+    _mirroredInfoState = newState;
+    _isBroadcastingInfoState = true;
+    try {
+      for (final ctrl in _infoControllers.values) {
+        if (ctrl.state != newState) {
+          if (newState == InfoState.shown) {
+            ctrl.show(animated: false);
+          } else {
+            ctrl.hide(animated: false);
+          }
+        }
+      }
+    } finally {
+      _isBroadcastingInfoState = false;
+    }
   }
 
   ViewerPageController _pageCtrlAt(int i) {
@@ -522,6 +564,7 @@ class _MediaViewerState extends State<MediaViewer>
                       infoBuilder: widget.infoBuilder,
                       pageOverlayBuilder: widget.pageOverlayBuilder,
                       backgroundBuilder: widget.backgroundBuilder,
+                      underMediaBuilder: widget.underMediaBuilder,
                       barsVisible: _barsVisible,
                       dismissProgress: progress,
                       screenHeight: screenH,
@@ -559,8 +602,8 @@ class _MediaViewerState extends State<MediaViewer>
                   child: Opacity(
                     opacity: barAlpha,
                     child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 220),
-                      curve: Curves.easeInOut,
+                      duration: widget.theme.barsToggleDuration,
+                      curve: widget.theme.barsToggleCurve,
                       opacity: _barsVisible ? 1.0 : 0.0,
                       child: widget.topBarBuilder!(ctx, _barCtx(progress)),
                     ),
@@ -578,8 +621,8 @@ class _MediaViewerState extends State<MediaViewer>
                   child: Opacity(
                     opacity: barAlpha,
                     child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 220),
-                      curve: Curves.easeInOut,
+                      duration: widget.theme.barsToggleDuration,
+                      curve: widget.theme.barsToggleCurve,
                       opacity: _barsVisible ? 1.0 : 0.0,
                       child: widget.bottomBarBuilder!(ctx, _barCtx(progress)),
                     ),

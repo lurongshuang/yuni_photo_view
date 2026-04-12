@@ -51,6 +51,7 @@ class ViewerPageShell extends StatefulWidget {
     required this.theme,
     required this.pageBuilder,
     this.backgroundBuilder,
+    this.underMediaBuilder,
     required this.barsVisible,
     required this.dismissProgress,
     this.infoBuilder,
@@ -71,6 +72,7 @@ class ViewerPageShell extends StatefulWidget {
 
   final ViewerPageBuilder pageBuilder;
   final ViewerBackgroundBuilder? backgroundBuilder;
+  final ViewerPageOverlayBuilder? underMediaBuilder;
   final ViewerInfoBuilder? infoBuilder;
 
   /// 不参与缩放的单页叠加层（如 Live 角标），在内容之上、全局顶底栏之下。
@@ -163,7 +165,7 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
 
     // 首次有明显竖向位移时再判定模式。
     if (_gestureMode == _GestureMode.pending) {
-      if (dy.abs() < 3) return;
+      if (dy.abs() < _cfg.verticalDragMinStartDistance) return;
 
       if (dy < 0) {
         // 向上：仅在手势开启且本页有信息区时展开面板。
@@ -279,12 +281,14 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
     );
 
     final pageOverlay = widget.pageOverlayBuilder?.call(ctx, pageCtx);
+    final underMedia = widget.underMediaBuilder?.call(ctx, pageCtx);
 
     final zoomCore = _ZoomableMediaWrapper(
       key: _zoomKey,
       enabled: _cfg.enableZoom && revealProgress < 0.05,
       enableDoubleTap: _cfg.enableDoubleTapZoom,
       pageController: widget.pageController,
+      theme: widget.theme,
       onSingleTap: _cfg.enableTapToToggleBars ? widget.onContentTap : null,
       child: widget.pageBuilder(ctx, pageCtx),
     );
@@ -315,6 +319,15 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
         if (widget.backgroundBuilder != null)
           Positioned.fill(
             child: widget.backgroundBuilder!(ctx, pageCtx),
+          ),
+
+        if (underMedia != null)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: contentH,
+            child: underMedia,
           ),
 
         // 主内容视口：高度随信息面板上移变矮；内容顶对齐，底部由 ClipRect 裁切。
@@ -510,6 +523,7 @@ class _ZoomableMediaWrapper extends StatefulWidget {
     required this.enabled,
     required this.enableDoubleTap,
     required this.pageController,
+    required this.theme,
     this.onSingleTap,
   });
 
@@ -517,6 +531,7 @@ class _ZoomableMediaWrapper extends StatefulWidget {
   final bool enabled;
   final bool enableDoubleTap;
   final ViewerPageController pageController;
+  final ViewerTheme theme;
 
   /// PhotoView 在确认「非双击」后的单击回调，用于切换顶底栏。
   final VoidCallback? onSingleTap;
@@ -551,7 +566,7 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     _scaleStateCtrl = PhotoViewScaleStateController();
     _animCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
+      duration: widget.theme.zoomDuration,
     )..addListener(_onAnimTick);
     widget.pageController.addListener(_onPageCtrlForProgrammaticZoom);
   }
@@ -696,7 +711,7 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
 
     final curved = CurvedAnimation(
       parent: _animCtrl,
-      curve: Curves.easeInOutCubic,
+      curve: widget.theme.zoomCurve,
     );
     _scaleAnim =
         Tween<double>(begin: currentScale, end: targetScale).animate(curved);

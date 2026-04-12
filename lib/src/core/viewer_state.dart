@@ -33,7 +33,11 @@ class ViewerPageContext {
     required this.barsVisible,
     required this.dismissProgress,
     this.mediaCardClipRadiusListenable,
+    this.extra,
   });
+
+  /// 对应 [ViewerItem.extra] 的直传引用。
+  final dynamic extra;
 
   /// 当前页在列表中的下标。
   final int index;
@@ -92,7 +96,11 @@ class ViewerBarContext {
     required this.infoRevealProgress,
     required this.isZoomed,
     this.usesDesktopUi = false,
+    this.extra,
   });
+
+  /// 对应 [ViewerItem.extra] 的直传引用。
+  final dynamic extra;
 
   final int index;
 
