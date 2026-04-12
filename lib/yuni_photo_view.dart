@@ -72,7 +72,7 @@ export 'src/core/viewer_controller.dart' show MediaViewerController;
 export 'src/core/viewer_theme.dart' show ViewerTheme;
 
 // ── 主组件 ───────────────────────────────────────────────────────────────────
-export 'src/viewer/media_viewer.dart' show MediaViewer;
+export 'src/viewer/media_viewer.dart' show MediaViewer, PagingResult;
 
 export 'src/viewer/media_card_chrome_scope.dart' show MediaCardChromeScope;
 

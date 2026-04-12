@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'viewer_state.dart';
+import 'viewer_item.dart';
 
 /// [MediaViewer] 的外部控制器。
 ///
@@ -20,6 +21,7 @@ class MediaViewerController extends ChangeNotifier {
   VoidCallback? _zoomInCallback;
   VoidCallback? _zoomOutCallback;
   VoidCallback? _zoomResetCallback;
+  void Function(List<ViewerItem>)? _appendItemsCallback;
   int _pendingJumpIndex = 0;
 
   // ── 只读状态 ─────────────────────────────────────────────────────────────
@@ -75,6 +77,7 @@ class MediaViewerController extends ChangeNotifier {
     VoidCallback? zoomContentIn,
     VoidCallback? zoomContentOut,
     VoidCallback? resetContentZoom,
+    void Function(List<ViewerItem>)? appendItems,
   }) {
     _jumpToPageCallback = jumpToPage;
     _showInfoCallback = showInfo;
@@ -83,6 +86,7 @@ class MediaViewerController extends ChangeNotifier {
     _zoomInCallback = zoomContentIn;
     _zoomOutCallback = zoomContentOut;
     _zoomResetCallback = resetContentZoom;
+    _appendItemsCallback = appendItems;
   }
 
   // ── 对外指令 ───────────────────────────────────────────────────────────────
@@ -125,6 +129,11 @@ class MediaViewerController extends ChangeNotifier {
 
   /// 当前页内容还原为 1×。
   void resetContentZoom() => _zoomResetCallback?.call();
+
+  /// 向查看器末尾追加新的媒体项目（异步分页场景使用）。
+  void appendItems(List<ViewerItem> newItems) {
+    _appendItemsCallback?.call(newItems);
+  }
 
   /// @nodoc
   int get pendingJumpIndex => _pendingJumpIndex;

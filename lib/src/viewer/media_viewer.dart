@@ -69,10 +69,50 @@ class MediaViewer extends StatefulWidget {
     this.onBarsVisibilityChanged,
     this.desktopChromeBuilder,
     this.underMediaBuilder,
-  });
+  })  : onLoadMore = null,
+        initialHasMore = false,
+        loadThreshold = 0;
 
-  /// 要展示的数据列表。
+  /// 分页模式构造函数。
+  const MediaViewer.paging({
+    super.key,
+    required List<ViewerItem> initialItems,
+    required this.onLoadMore,
+    required this.pageBuilder,
+    this.initialIndex = 0,
+    this.initialHasMore = true,
+    this.loadThreshold = 2,
+    this.infoBuilder,
+    this.pageOverlayBuilder,
+    this.topBarBuilder,
+    this.bottomBarBuilder,
+    this.overlayBuilder,
+    this.backgroundBuilder,
+    this.controller,
+    this.config = const ViewerInteractionConfig(),
+    this.theme = const ViewerTheme(),
+    this.onPageChanged,
+    this.onInfoStateChanged,
+    this.onDismiss,
+    this.onBarsVisibilityChanged,
+    this.desktopChromeBuilder,
+    this.underMediaBuilder,
+  }) : items = initialItems;
+
+  /// 要展示的基础数据列表（分页模式下为初始数据）。
   final List<ViewerItem> items;
+
+  /// 分页加载回调：返回新数据及是否还有更多。
+  ///
+  /// 调用时机：当 [loadThreshold] 满足且当前未在加载中。
+  /// 参数为当前查看器列表中已知的最后一项（可用于业务锚点分析）。
+  final Future<PagingResult> Function(ViewerItem lastItem)? onLoadMore;
+
+  /// 初始的分页状态。
+  final bool initialHasMore;
+
+  /// 触发预拉取的阈值（默认 2：即滑动到倒数第 2 张时开始加载下一页）。
+  final int loadThreshold;
 
   /// 每一页主内容，必填。
   final ViewerPageBuilder pageBuilder;
@@ -172,6 +212,60 @@ class MediaViewer extends StatefulWidget {
     );
   }
 
+  /// 开启具备分页能力的查看器。
+  static Future<T?> openPaging<T>(
+    BuildContext context, {
+    required List<ViewerItem> initialItems,
+    required Future<PagingResult> Function(ViewerItem lastItem) onLoadMore,
+    required ViewerPageBuilder pageBuilder,
+    int initialIndex = 0,
+    bool initialHasMore = true,
+    int loadThreshold = 2,
+    ViewerInfoBuilder? infoBuilder,
+    ViewerPageOverlayBuilder? pageOverlayBuilder,
+    ViewerBarBuilder? topBarBuilder,
+    ViewerBarBuilder? bottomBarBuilder,
+    ViewerOverlayBuilder? overlayBuilder,
+    ViewerBackgroundBuilder? backgroundBuilder,
+    MediaViewerController? controller,
+    ViewerInteractionConfig config = const ViewerInteractionConfig(),
+    ViewerTheme theme = const ViewerTheme(),
+    ValueChanged<int>? onPageChanged,
+    ValueChanged<InfoState>? onInfoStateChanged,
+    VoidCallback? onDismiss,
+    ValueChanged<bool>? onBarsVisibilityChanged,
+    ViewerDesktopChromeBuilder? desktopChromeBuilder,
+    ViewerPageOverlayBuilder? underMediaBuilder,
+  }) {
+    return Navigator.of(context).push<T>(
+      _ViewerPageRoute<T>(
+        builder: (_) => MediaViewer.paging(
+          initialItems: initialItems,
+          onLoadMore: onLoadMore,
+          pageBuilder: pageBuilder,
+          initialIndex: initialIndex,
+          initialHasMore: initialHasMore,
+          loadThreshold: loadThreshold,
+          infoBuilder: infoBuilder,
+          pageOverlayBuilder: pageOverlayBuilder,
+          backgroundBuilder: backgroundBuilder,
+          underMediaBuilder: underMediaBuilder,
+          controller: controller,
+          config: config,
+          theme: theme,
+          onPageChanged: onPageChanged,
+          onInfoStateChanged: onInfoStateChanged,
+          onDismiss: onDismiss,
+          onBarsVisibilityChanged: onBarsVisibilityChanged,
+          topBarBuilder: topBarBuilder,
+          bottomBarBuilder: bottomBarBuilder,
+          overlayBuilder: overlayBuilder,
+          desktopChromeBuilder: desktopChromeBuilder,
+        ),
+      ),
+    );
+  }
+
   @override
   State<MediaViewer> createState() => _MediaViewerState();
 }
@@ -202,11 +296,18 @@ class _MediaViewerState extends State<MediaViewer>
   InfoState _mirroredInfoState = InfoState.hidden;
   bool _isBroadcastingInfoState = false;
 
+  // 分页管理
+  late List<ViewerItem> _internalItems;
+  late bool _hasMore;
+  bool _isLoadingMore = false;
+
   // ── 生命周期 ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
+    _internalItems = List.from(widget.items);
+    _hasMore = widget.initialHasMore;
     _currentIndex = widget.initialIndex.clamp(0, _itemCount - 1);
     _pageController = PageController(initialPage: _currentIndex);
 
@@ -256,9 +357,9 @@ class _MediaViewerState extends State<MediaViewer>
 
   ViewerInteractionConfig get _cfg => widget.config;
 
-  int get _itemCount => widget.items.length;
+  int get _itemCount => _internalItems.length;
 
-  ViewerItem _itemAt(int i) => widget.items[i];
+  ViewerItem _itemAt(int i) => _internalItems[i];
 
   InfoSheetController _infoCtrlAt(int i) {
     return _infoControllers.putIfAbsent(
@@ -319,10 +420,42 @@ class _MediaViewerState extends State<MediaViewer>
     _currentIndex = index;
     _pageCtrlAt(_currentIndex).addListener(_onCurrentPageZoomChanged);
 
+    // 分页判定：滑到临近末尾触发加载
+    if (widget.onLoadMore != null && _hasMore && !_isLoadingMore) {
+      if (_itemCount - 1 - index <= widget.loadThreshold) {
+        _triggerLoadMore();
+      }
+    }
+
     widget.controller?.updateIndex(index);
     widget.controller?.updateInfoState(_currentInfoCtrl.state);
     widget.onPageChanged?.call(index);
     setState(() {}); // 刷新顶底栏上下文
+  }
+
+  Future<void> _triggerLoadMore() async {
+    if (_isLoadingMore) return;
+    _isLoadingMore = true;
+    try {
+      final lastItem = _internalItems.last;
+      final result = await widget.onLoadMore!(lastItem);
+      if (mounted) {
+        setState(() {
+          _internalItems.addAll(result.items);
+          _hasMore = result.hasMore;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
+    }
+  }
+
+  void _appendItemsFromController(List<ViewerItem> newItems) {
+    setState(() {
+      _internalItems.addAll(newItems);
+    });
   }
 
   void _attachControllerCallbacks() {
@@ -334,6 +467,7 @@ class _MediaViewerState extends State<MediaViewer>
       zoomContentIn: _requestZoomInOnCurrentPage,
       zoomContentOut: _requestZoomOutOnCurrentPage,
       resetContentZoom: _requestZoomResetOnCurrentPage,
+      appendItems: _appendItemsFromController,
     );
   }
 
@@ -756,4 +890,18 @@ class _ViewerPageRoute<T> extends PageRoute<T> {
       child: child,
     );
   }
+}
+
+/// 分页加载结果包装。
+class PagingResult {
+  const PagingResult({
+    required this.items,
+    required this.hasMore,
+  });
+
+  /// 新加载出的项目列表。
+  final List<ViewerItem> items;
+
+  /// 是否还可以继续加载下一页。
+  final bool hasMore;
 }

@@ -13,6 +13,7 @@ import 'cases/media_card_chrome_case.dart';
 import 'cases/minimal_case.dart';
 import 'cases/no_info_case.dart';
 import 'cases/extensibility_case.dart';
+import 'cases/paging_case.dart';
 
 void main() {
   runApp(const ExampleApp());
@@ -101,6 +102,11 @@ class _CaseListPage extends StatelessWidget {
         title: '11. 扩展性：插槽与动效魔改',
         subtitle: 'underMediaBuilder 立体投影、自定义 Duration 与特制 extra 水印',
         builder: (_) => const ExtensibilityCase(),
+      ),
+      _CaseEntry(
+        title: '12. 异步分页加载',
+        subtitle: 'onLoadMore 自动预加载（无限滚动效果）',
+        builder: (_) => const PagingCase(),
       ),
     ];
 
