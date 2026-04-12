@@ -37,6 +37,8 @@ class InfoSheetController extends ChangeNotifier {
   static const double _dragHandleRegionHeight = 32.0;
 
   void setScreenHeight(double h) {
+    if ((_screenHeight - h).abs() < 0.1) return;
+
     final oldDefault = defaultShownHeight;
     _screenHeight = h;
     final newDefault = defaultShownHeight;
@@ -51,7 +53,9 @@ class InfoSheetController extends ChangeNotifier {
       // 场景 B：屏幕尺寸变化（如旋转），若当前高度超出新上限，需夹紧
       else if (_sheetHeight > maxShownHeight) {
         _sheetHeight = maxShownHeight;
-        notifyListeners();
+        // 如果我们确知在构建中（通过 stack trace 知道），应避免立即通知。
+        // 使用 microtask 或 postFrameCallback 兜底以防状态不一致。
+        Future.microtask(notifyListeners);
       }
     }
   }

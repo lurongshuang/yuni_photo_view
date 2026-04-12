@@ -21,8 +21,8 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
-  video_player_avfoundation: dd410b52df6d2466a42d28550e33e4146928280a
-  yuni_photo_view: 2f23a18a823dcd4a870f0012160fa1b7eb80ede6
+  video_player_avfoundation: 7993f492ae0bd77edaea24d9dc051d8bb2cd7c86
+  yuni_photo_view: ee8c6ea700a5315655a4b278fd4cfad7336fa07a
 
 PODFILE CHECKSUM: 54d867c82ac51cbd61b565781b9fada492027009
 

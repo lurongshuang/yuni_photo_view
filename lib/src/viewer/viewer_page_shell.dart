@@ -619,22 +619,10 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     final pos = _photoCtrl.position;
     final ratio = next / cur;
 
-    // PhotoView 内部 position 与缩放手势 focal 一致，均为全局坐标；锚点须用视口中心的全局坐标。
-    final box =
-        _photoViewportKey.currentContext?.findRenderObject() as RenderBox?;
-    Offset newPos;
-    if (box != null && box.hasSize) {
-      final centerGlobal = box.localToGlobal(
-        Offset(box.size.width / 2, box.size.height / 2),
-      );
-      newPos = Offset(
-        centerGlobal.dx + (pos.dx - centerGlobal.dx) * ratio,
-        centerGlobal.dy + (pos.dy - centerGlobal.dy) * ratio,
-      );
-    } else {
-      // 尚无布局时退化为与捏合「焦点不动」时类似的比例平移，避免锚到错误局部坐标。
-      newPos = Offset(pos.dx * ratio, pos.dy * ratio);
-    }
+    // PhotoView 内部 position (pos) 实际上就是相对于视口中心的偏移矢量。
+    // 要实现基于中心的不动点缩放，逻辑上 V = Offset.zero。
+    // 应用公式 P2 = V - (V - P1) * (S2 / S1) => P2 = P1 * ratio。
+    final newPos = pos * ratio;
 
     _photoCtrl.updateMultiple(scale: next, position: newPos);
     _scaleStateCtrl.scaleState = next > _kMinScale + 0.02
