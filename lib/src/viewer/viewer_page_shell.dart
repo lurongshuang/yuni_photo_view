@@ -537,8 +537,7 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
   Animation<double>? _scaleAnim;
   Animation<Offset>? _positionAnim;
 
-  // 每次 onTapDown 更新；双击第二下按下时的坐标即为缩放中心。
-  Offset _lastTapPosition = Offset.zero;
+  Offset _lastGlobalTapPosition = Offset.zero;
 
   static const double _kMinScale = 1.0;
   static const double _kMaxScale = 5.0;
@@ -649,25 +648,6 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     }
   }
 
-  // 双击走 PhotoView 的 scaleStateCycle，勿再包一层 GestureDetector(onDoubleTap)，
-  // 否则内层 DoubleTapGestureRecognizer 永远胜出，外层不会触发。
-
-  void _onPhotoViewTapDown(
-    BuildContext _,
-    TapDownDetails details,
-    PhotoViewControllerValue __,
-  ) {
-    _lastTapPosition = details.localPosition;
-  }
-
-  void _onPhotoViewTapUp(
-    BuildContext _,
-    TapUpDetails details,
-    PhotoViewControllerValue __,
-  ) {
-    widget.onSingleTap?.call();
-  }
-
   PhotoViewScaleState _handleDoubleTap(PhotoViewScaleState currentState) {
     if (!widget.enableDoubleTap) {
       return currentState;
@@ -691,12 +671,27 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     } else {
       const s = _kDoubleTapScale;
       targetScale = s;
-      // 视口位置 ≈ scale * 子坐标 + position；令点击处在缩放前后屏幕位置不变：
-      // targetPosition = -tap * (s - 1)
-      targetPosition = Offset(
-        -_lastTapPosition.dx * (s - 1),
-        -_lastTapPosition.dy * (s - 1),
-      );
+
+      final box =
+          _photoViewportKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box != null && box.hasSize) {
+        // 1. 获取视口在屏幕上的绝对物理中心
+        final viewportCenterGlobal = box.localToGlobal(
+          Offset(box.size.width / 2, box.size.height / 2),
+        );
+
+        // 2. 计算点击点相对于视口中心的绝对物理矢量 (V)
+        final V = _lastGlobalTapPosition - viewportCenterGlobal;
+
+        // 3. 应用不动点平移公式：P2 = V - (V - P1) * (S2 / S1)
+        final S1 = currentScale;
+        final S2 = targetScale;
+        final P1 = currentPosition;
+
+        targetPosition = V - (V - P1) * (S2 / S1);
+      } else {
+        targetPosition = Offset.zero;
+      }
     }
 
     final curved = CurvedAnimation(
@@ -721,22 +716,32 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
       return widget.child;
     }
 
-    return SizedBox.expand(
-      key: _photoViewportKey,
-      child: PhotoView.customChild(
-        controller: _photoCtrl,
-        scaleStateController: _scaleStateCtrl,
-        // tightMode：子级约束为视口尺寸，边界夹紧无需额外 childSize。
-        tightMode: true,
-        minScale: _kMinScale,
-        maxScale: _kMaxScale,
-        initialScale: _kMinScale,
-        backgroundDecoration: const BoxDecoration(color: Colors.transparent),
-        gestureDetectorBehavior: HitTestBehavior.translucent,
-        onTapDown: _onPhotoViewTapDown,
-        onTapUp: widget.onSingleTap != null ? _onPhotoViewTapUp : null,
-        scaleStateCycle: _handleDoubleTap,
-        child: widget.child,
+    return Listener(
+      onPointerDown: (event) {
+        _lastGlobalTapPosition = event.position;
+        debugPrint('[ViewerLog] PointerDown: ${event.position}');
+      },
+      child: SizedBox.expand(
+        key: _photoViewportKey,
+        child: PhotoView.customChild(
+          controller: _photoCtrl,
+          scaleStateController: _scaleStateCtrl,
+          tightMode: true,
+          minScale: _kMinScale,
+          maxScale: _kMaxScale,
+          initialScale: _kMinScale,
+          backgroundDecoration: const BoxDecoration(color: Colors.transparent),
+          gestureDetectorBehavior: HitTestBehavior.translucent,
+          onTapDown: (_, details, __) {
+            debugPrint('[ViewerLog] PhotoView.onTapDown');
+          },
+          onTapUp: (_, details, __) {
+            debugPrint('[ViewerLog] PhotoView.onTapUp');
+            widget.onSingleTap?.call();
+          },
+          scaleStateCycle: _handleDoubleTap,
+          child: widget.child,
+        ),
       ),
     );
   }

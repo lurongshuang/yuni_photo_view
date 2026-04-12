@@ -16,7 +16,7 @@
 - **下拉关闭**：丝滑的下拉跟手关闭手势，背景透明度随进度变化，支持自定义回弹阻尼。
 - **桌面端增强**：自动识别 macOS/Windows/Linux。提供专门的桌面工具条（翻页、缩放、旋转预览、信息开关）。支持键盘快捷键。
 - **相册卡片模式**：支持图片在“有圆角/有边距的卡片态”与“无圆角/无边距的全屏态”之间平滑切换。
-- **图片感知背景**：内置 `ViewerDiffuseBackground`，支持从 URL 自动取色并根据图片比例自适应对齐。
+- **动态弥散背景**：内置 `ViewerDiffuseBackground`，支持基于元数据（颜色、尺寸）绘制高性能弥散装饰球。
 
 ---
 
@@ -38,10 +38,11 @@ await MediaViewer.open(
       child: Image.network(url, fit: BoxFit.contain),
     );
   },
-  // 背景装饰（可选）
+  // 背景装饰（可选）：纯数据驱动，由业务侧提供颜色和原始尺寸。
   backgroundBuilder: (ctx, pageCtx) => ViewerDiffuseBackground(
     pageCtx: pageCtx,
-    url: pageCtx.item.payload as String,
+    color: Colors.blueAccent.withValues(alpha: 0.3),
+    imageSize: const Size(1200, 800),
   ),
   infoBuilder: (ctx, pageCtx) => Text('元数据 ${pageCtx.item.id}'),
 );
@@ -114,10 +115,13 @@ await MediaViewer.open(
 - **作用**: 当底部信息面板上滑时，内容会自动从 `contain` 模式向顶部偏移并转为 `cover` 裁剪感，保持视觉焦点。
 
 #### **ViewerDiffuseBackground**
-专门用于 `backgroundBuilder` 的装饰组件。
-- `url`: 传入图片 URL，组件会自动从图片中**提取主题色**作为装饰色。
-- `pageCtx`: 用于感知当前页面的缩放和圆角状态。
-- **特性**: 自动感知图片显示尺寸，确保装饰球始终紧贴图片边缘（对横轴/纵显图做了适配）。
+专门用于 `backgroundBuilder` 的装饰组件，已彻底剥离图片逻辑，实现 100% 数据驱动。
+- **color**: 静态背景色。传入则直接渲染装饰球，不传则使用默认透明底色。
+- **imageSize**: 图片原始物理尺寸。传入后组件将自动计算“装饰球”在该比例下的对齐锚点（contain 适配），使背景始终贴合媒体内容边缘。
+- **colorProvider**: 异步颜色提供者。业务侧可在此时调用异步工具获色并返回。
+- **sizeProvider**: 异步尺寸提供者。
+- **pageCtx**: 当前页环境。
+- **特性**: 极简且稳健。通过 `item.id` 固化异步元数据，不承担任何图片流解析、渲染或感知职责。开发者拥有对 UI 装饰数据的绝对掌控权。
 
 ---
 

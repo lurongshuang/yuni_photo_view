@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:palette_generator/palette_generator.dart';
 
 import '../core/viewer_state.dart';
 
@@ -11,27 +10,71 @@ import '../core/viewer_state.dart';
 /// 常用作 [MediaViewer.backgroundBuilder] 的返回值。
 ///
 /// 功能：
-/// 1. **自动取色**: 传入 [url] 且未传 [color] 时，自动从图片中提取主题色。
-/// 2. **图片感知布局**: 自动获取图片尺寸，使背景球始终对齐到图片的渲染边界（而非屏幕边界）。
-/// 3. **状态联动**: 联动 [ViewerPageContext.barsVisible] 和 [ViewerPageContext.mediaCardClipRadiusListenable]，
+/// 1. **纯数据驱动**: 装饰球颜色完全由 [color] 或 [colorProvider] 决定，组件内部不再处理图片加载。
+/// 2. **元数据对齐**: 通过 [imageSize] 或 [sizeProvider] 感知内容原始比例，使装饰球始终对齐到媒体的渲染边界。
+/// 3. **性能优化**: 彻底剥离图片流解析，采用基于 `itemId` 的数据缓存，确保分页切换瞬间响应。
+/// 4. **状态联动**: 联动 [ViewerPageContext.barsVisible] 和 [ViewerPageContext.mediaCardClipRadiusListenable]，
 ///    实现全屏沉浸模式下自动淡出。
 class ViewerDiffuseBackground extends StatefulWidget {
+  /// 基础构造函数：提供最高灵活性，支持同步与异步混合传入。
   const ViewerDiffuseBackground({
     super.key,
     required this.pageCtx,
-    this.url,
     this.color,
+    this.imageSize,
+    this.colorProvider,
+    this.sizeProvider,
     this.ballSize = 280,
   });
+
+  /// 静态同步模式：适用于已知主色调和尺寸的场景（例如从列表页缓存中带入）。
+  /// 能够实现首帧即达的渲染效果，无任何异步延迟。
+  factory ViewerDiffuseBackground.static({
+    Key? key,
+    required ViewerPageContext pageCtx,
+    required Color color,
+    required Size imageSize,
+    double ballSize = 280,
+  }) =>
+      ViewerDiffuseBackground(
+        key: key,
+        pageCtx: pageCtx,
+        color: color,
+        imageSize: imageSize,
+        ballSize: ballSize,
+      );
+
+  /// 异步提供者模式：适用于需要动态计算（如实时 Palette 提取）的场景。
+  /// 背景球将在数据计算完成后自动渐变显示。
+  factory ViewerDiffuseBackground.async({
+    Key? key,
+    required ViewerPageContext pageCtx,
+    required Future<Color?> Function() colorProvider,
+    required Future<Size?> Function() sizeProvider,
+    double ballSize = 280,
+  }) =>
+      ViewerDiffuseBackground(
+        key: key,
+        pageCtx: pageCtx,
+        colorProvider: colorProvider,
+        sizeProvider: sizeProvider,
+        ballSize: ballSize,
+      );
 
   /// 当前页面的上下文。
   final ViewerPageContext pageCtx;
 
-  /// 媒体 URL，用于自动取色和计算布局比例。
-  final String? url;
-
-  /// 背景球的主色调。若不传且 [url] 存在，则自动提取图片主题色。
+  /// 背景球的主色调。
   final Color? color;
+
+  /// 图片的原始尺寸。
+  final Size? imageSize;
+
+  /// 异步颜色提供者。
+  final Future<Color?> Function()? colorProvider;
+
+  /// 异步尺寸提供者。
+  final Future<Size?> Function()? sizeProvider;
 
   /// 背景球的尺寸基数。
   final double ballSize;
@@ -54,83 +97,48 @@ class _ViewerDiffuseBackgroundState extends State<ViewerDiffuseBackground> {
   @override
   void didUpdateWidget(ViewerDiffuseBackground old) {
     super.didUpdateWidget(old);
-    if (old.url != widget.url || old.color != widget.color) {
+    if (old.color != widget.color ||
+        old.imageSize != widget.imageSize ||
+        old.pageCtx.item.id != widget.pageCtx.item.id) {
       _resolvedData = null;
       _handleData();
     }
   }
 
   Future<void> _handleData() async {
-    final url = widget.url;
-    final manualColor = widget.color;
+    final itemId = widget.pageCtx.item.id;
 
-    // 如果通过色值直接指定
-    if (manualColor != null) {
-      Size size = Size.zero;
-      if (url != null) {
-        size = await _resolveImageSize(url);
-      }
-      if (mounted) {
-        setState(() =>
-            _resolvedData = _InternalImageData(color: manualColor, size: size));
-      }
+    // 1. 尝试从缓存直接读取
+    if (_cache.containsKey(itemId)) {
+      if (mounted) setState(() => _resolvedData = _cache[itemId]);
       return;
     }
 
-    // 尝试从缓存或 URL 提取
-    if (url != null) {
-      if (_cache.containsKey(url)) {
-        setState(() => _resolvedData = _cache[url]);
-        return;
-      }
+    // 2. 依次尝试各级数据源
+    Color? finalColor = widget.color;
+    Size? finalSize = widget.imageSize;
 
-      try {
-        final provider = NetworkImage(url);
+    // 2.1 尝试异步回调（如果同步值为空）
+    if (finalColor == null && widget.colorProvider != null) {
+      finalColor = await widget.colorProvider!();
+    }
+    if (finalSize == null && widget.sizeProvider != null) {
+      finalSize = await widget.sizeProvider!();
+    }
 
-        // 1. 获取颜色
-        final palette = await PaletteGenerator.fromImageProvider(
-          provider,
-          maximumColorCount: 10,
-        );
-        final color = palette.dominantColor?.color.withValues(alpha: 0.4) ??
-            Colors.white.withValues(alpha: 0.2);
+    // 3. 结果合并与兜底
+    finalColor ??= Colors.white.withValues(alpha: 0.2);
+    finalSize ??= Size.zero;
 
-        // 2. 获取尺寸
-        final size = await _resolveImageSize(url);
+    final data = _InternalImageData(color: finalColor, size: finalSize);
+    _cache[itemId] = data;
 
-        final data = _InternalImageData(color: color, size: size);
-        _cache[url] = data;
-        if (mounted) setState(() => _resolvedData = data);
-      } catch (_) {
-        // Ignore
-      }
+    if (mounted) {
+      setState(() => _resolvedData = data);
     }
   }
 
-  Future<Size> _resolveImageSize(String url) async {
-    try {
-      final completer = Completer<Size>();
-      final provider = NetworkImage(url);
-      final stream = provider.resolve(const ImageConfiguration());
-      late ImageStreamListener listener;
-      listener = ImageStreamListener((ImageInfo info, bool synchronousCall) {
-        if (!completer.isCompleted) {
-          completer.complete(Size(
-            info.image.width.toDouble(),
-            info.image.height.toDouble(),
-          ));
-        }
-        stream.removeListener(listener);
-      }, onError: (Object exception, StackTrace? stackTrace) {
-        if (!completer.isCompleted) completer.complete(Size.zero);
-        stream.removeListener(listener);
-      });
-      stream.addListener(listener);
-      return await completer.future;
-    } catch (_) {
-      return Size.zero;
-    }
-  }
+
 
   @override
   Widget build(BuildContext context) {

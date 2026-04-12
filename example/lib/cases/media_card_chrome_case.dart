@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:palette_generator/palette_generator.dart';
 import 'package:yuni_photo_view/yuni_photo_view.dart';
 
 import '../utils/demo_data.dart';
@@ -26,7 +30,7 @@ class MediaCardChromeCase extends StatelessWidget {
           children: [
             Text('主内容卡片圆角'),
             Text(
-              '单击切栏；缩放后外框贴边，还原后恢复圆角',
+              '异步从图片提取背景颜色与尺寸',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.normal,
@@ -66,9 +70,32 @@ class MediaCardChromeCase extends StatelessWidget {
   }
 
   Widget _buildBackground(BuildContext context, ViewerPageContext pageCtx) {
+    final url = pageCtx.item.payload as String;
+    final imageProvider = NetworkImage(url);
+
     return ViewerDiffuseBackground(
-      url: pageCtx.item.payload as String,
       pageCtx: pageCtx,
+      // 【实际案例】：业务侧使用 palette_generator 异步获取图片主题色
+      colorProvider: () async {
+        final palette = await PaletteGenerator.fromImageProvider(
+          imageProvider,
+          maximumColorCount: 5,
+        );
+        // 选取主色调并设置 0.3 的不透明度，用于背景球
+        return palette.dominantColor?.color.withValues(alpha: 0.3);
+      },
+      // 【实际案例】：业务侧异步解析图片原始物理尺寸
+      // 传入尺寸后，ViewerDiffuseBackground 可以实现背景球与图片的精确边缘对齐（Contain 模式适配）
+      sizeProvider: () async {
+        final Completer<ui.Image> completer = Completer();
+        final stream = imageProvider.resolve(ImageConfiguration.empty);
+        stream.addListener(ImageStreamListener((info, _) {
+          if (!completer.isCompleted) completer.complete(info.image);
+        }));
+        final image = await completer.future;
+        return Size(image.width.toDouble(), image.height.toDouble());
+      },
+      ballSize: 300,
     );
   }
 
@@ -101,7 +128,6 @@ class MediaCardChromeCase extends StatelessWidget {
 
   Widget _buildInfo(BuildContext context, ViewerPageContext pageCtx) {
     final meta = pageCtx.item.meta ?? {};
-    // 使用 Column：info 区已在壳内 SingleChildScrollView 中，勿再嵌套未 shrinkWrap 的 ListView。
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -114,8 +140,9 @@ class MediaCardChromeCase extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '上滑查看元数据。顶底栏都显示时主图带圆角与边距；点按内容隐藏栏或放大图片后外框会贴齐视口。',
-            style: Theme.of(context).textTheme.bodyMedium,
+            '背景色是如何产生的？示例中通过 backgroundBuilder -> ViewerDiffuseBackground 的 colorProvider 回调，'
+            '调用 palette_generator 异步提取了原图的主色调。',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70),
           ),
         ],
       ),
@@ -139,14 +166,6 @@ class MediaCardChromeCase extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            if (barCtx.isZoomed)
-              const Padding(
-                padding: EdgeInsets.only(right: 8),
-                child: Text(
-                  '已放大',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-              ),
           ],
         ),
       ),
@@ -170,8 +189,6 @@ class MediaCardChromeCase extends StatelessWidget {
     );
   }
 }
-
-
 
 class _GridThumb extends StatelessWidget {
   const _GridThumb({required this.item, required this.onTap});

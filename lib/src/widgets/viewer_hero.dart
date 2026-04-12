@@ -40,7 +40,7 @@ import 'package:flutter/material.dart';
 /// // pageBuilder 侧：用 ViewerHero 替换原生 Hero
 /// pageBuilder: (ctx, pageCtx) => ViewerHero(
 ///   tag: 'photo_${pageCtx.item.id}',
-///   imageUrl: pageCtx.item.payload as String,
+///   imageProvider: NetworkImage(pageCtx.item.payload as String),
 ///   child: ViewerMediaCoverFrame(
 ///     revealProgress: pageCtx.infoRevealProgress,
 ///     child: Image.network(pageCtx.item.payload as String),
