@@ -3,159 +3,120 @@
 [![pub package](https://img.shields.io/pub/v/yuni_photo_view.svg)](https://pub.dev/packages/yuni_photo_view)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**YuniPhotoView** 是一套 Flutter **全屏媒体查看交互框架**。它提供了一套完整的“壳层”能力：分页管理、PhotoView 集成、吸附式信息面板、下拉跟手关闭、顶部/底部操作栏补位，以及针对桌面端的全面适配。
+**YuniPhotoView** 是一套 Flutter **生产级全屏媒体查看交互框架**。它提供了一套完整的“壳层”交互方案：分页管理、物理级缩放、异步分页加载、插槽系统、下拉关闭手势以及桌面端深度适配。
 
-> **核心哲学**：本包**不绘制**具体的媒体内容（图片或视频）。具体的解码、渲染布局均由业务在 `pageBuilder` 等回调中完成，从而实现与业务逻辑的高度解耦。
-
----
-
-## 核心特性
-
-- **分页与缩放**：内置 `PageView`。图片放大时自动禁止横滑翻页，确保手势不冲突。支持通过控制器程序化控制缩放。
-- **信息面板**：底部弹性面板，支持拖拽吸附。在触屏上支持手势上滑，桌面端支持通过按钮/快捷键展开。
-- **下拉关闭**：丝滑的下拉跟手关闭手势，背景透明度随进度变化，支持自定义回弹阻尼。
-- **桌面端增强**：自动识别 macOS/Windows/Linux。提供专门的桌面工具条（翻页、缩放、旋转预览、信息开关）。支持键盘快捷键。
-- **相册卡片模式**：支持图片在“有圆角/有边距的卡片态”与“无圆角/无边距的全屏态”之间平滑切换。
-- **动态弥散背景**：内置 `ViewerDiffuseBackground`，支持基于元数据（颜色、尺寸）绘制高性能弥散装饰球。
+> **核心哲学**：本包**不直接渲染**图片或视频。所有具体的媒体渲染逻辑均由业务在 `pageBuilder` 等回调中完成，从而实现 UI 表现与业务逻辑的极致解耦。
 
 ---
 
-## 快速开始
+## 🔥 核心特性
+
+- **分页与物理缩放**：
+  - 内置高性能 `PageView`。当内容放大时自动拦截翻页手势，确保缩放与翻页互不干扰。
+  - **物理级不动点投影**：采用全局坐标投影算法，确保双击缩放点在任何嵌套布局下都能像素级精准对位。
+- **异步分页加载 (Paging)**：
+  - 支持 `openPaging` 模式。滑到列表末尾时自动触发预加载回调，并透传 `lastItem` 辅助业务锚点定位，实现丝滑的无限滚动体验。
+- **插槽系统 (Slots)**：
+  - **underMediaBuilder**：支持在媒体层与背景层之间插入自定义布局（如立体投影、底衬装饰），插槽内容随内容同步缩放。
+- **业务数据透传 (Extra Payload)**：
+  - `ViewerItem` 内置 `extra` 字段，业务数据可直接穿透壳层，在水印、详情面板中通过上下文直接读取。
+- **下拉关闭手势**：
+  - 丝滑的下拉跟手关闭，背景透明度与缩放联动。支持自定义触发阈值与回弹阻尼。
+- **交互级动效定制**：
+  - 暴露全链路动画参数（时长、曲线），让开发者能够调校出“弹簧”或“匀速”等差异化手感。
+- **桌面端深度优化**：
+  - 自动适配 macOS/Windows/Linux/Web。
+  - 完整控件条方案：翻页、缩放步进、全键盘快捷键绑定。
+
+---
+
+## 📦 快速开始
+
+### 1. 固定列表模式 (Basic)
 
 ```dart
 import 'package:yuni_photo_view/yuni_photo_view.dart';
 
-await MediaViewer.open(
+MediaViewer.open(
   context,
   items: [
     DefaultViewerItem(id: '1', payload: 'https://example.com/a.jpg'),
-    DefaultViewerItem(id: '2', payload: 'https://example.com/b.jpg'),
   ],
   pageBuilder: (ctx, pageCtx) {
-    final url = pageCtx.item.payload as String;
-    return ViewerMediaCoverFrame(
-      revealProgress: pageCtx.infoRevealProgress,
-      child: Image.network(url, fit: BoxFit.contain),
-    );
+    return Image.network(pageCtx.item.payload as String);
   },
-  // 背景装饰（可选）：纯数据驱动，由业务侧提供颜色和原始尺寸。
-  backgroundBuilder: (ctx, pageCtx) => ViewerDiffuseBackground(
-    pageCtx: pageCtx,
-    color: Colors.blueAccent.withValues(alpha: 0.3),
-    imageSize: const Size(1200, 800),
-  ),
-  infoBuilder: (ctx, pageCtx) => Text('元数据 ${pageCtx.item.id}'),
+);
+```
+
+### 2. 异步分页模式 (Paging)
+
+```dart
+MediaViewer.openPaging(
+  context,
+  initialItems: firstPageItems,
+  onLoadMore: (lastItem) async {
+    // 基于最后一项的 ID 请求下一页
+    final nextItems = await api.fetchNextPage(after: lastItem.id);
+    return PagingResult(items: nextItems, hasMore: true);
+  },
+  pageBuilder: (ctx, pageCtx) => Image.network(pageCtx.item.payload),
 );
 ```
 
 ---
 
-## 组件与参数详解
+## 🛠️ API 详解
 
-### 1. MediaViewer (主入口)
+### 1. MediaViewer 核心参数
 
-使用 `MediaViewer.open(context, ...)` 静态方法快速启动查看器。
+| 参数 | 说明 |
+| :--- | :--- |
+| `items` | 数据源。支持 `DefaultViewerItem` 或子类自定义字段。 |
+| `pageBuilder` | **核心插槽**。构建每一页的主内容。 |
+| `underMediaBuilder` | **新增插槽**。媒体层下方的叠加层（如自定义阴影）。 |
+| `pageOverlayBuilder`| **浮层插槽**。随内容翻页，但不会被缩放。 |
+| `onLoadMore` | **分页回调**。接收 `lastItem` 参数，返回 `PagingResult`。 |
+| `theme` | `ViewerTheme`。管理颜色、动效 Duration/Curve。 |
+| `config` | `InteractionConfig`。管理手势阈值、阻尼。 |
 
-| 参数 | 类型 | 说明与场景 |
+### 2. ViewerInteractionConfig (交互微调)
+
+| 参数 | 默认值 | 说明 |
 | :--- | :--- | :--- |
-| `items` | `List<ViewerItem>` | **必填**。数据源列表。建议使用 `DefaultViewerItem` 或继承它以携带更多信息。 |
-| `pageBuilder` | `ViewerPageBuilder` | **必填**。构建每一页的主内容（图片/视频）。提供 `ViewerPageContext` 包含当前页缩放进度。 |
-| `backgroundBuilder`| `ViewerPageOverlayBuilder` | **可选**。构建垫在媒体下层的背景（如模糊球、装饰图）。会随翻页切换。 |
-| `infoBuilder` | `ViewerInfoBuilder` | **可选**。底部信息面板内容。若为 null，则该页不显示信息面板。 |
-| `topBarBuilder` | `ViewerBarBuilder` | **可选**。自定义顶栏。框架会自动处理其显隐动画。 |
-| `bottomBarBuilder` | `ViewerBarBuilder` | **可选**。自定义底栏（通常放置页码、收藏、操作按钮）。 |
-| `onPageChanged` | `Function(int)` | **业务钩子**。当页面切换完成时回调。 |
-| `onDismiss` | `VoidCallback` | **业务钩子**。当查看器彻底关闭（下拉或返回）时回调。 |
-| `theme` | `ViewerTheme` | **样式**。控制颜色、圆角、动画时长。 |
-| `config` | `InteractionConfig` | **手势**。微调阻尼、阈值、手势开关。 |
+| `verticalDragMinStartDistance` | `3.0` | **手势门限**。微调纵向滑动触发关闭/面板的灵敏度，解决横滑误触。 |
+| `infoSyncMode` | `perPage` | `mirrored` 模式下所有页共享 Info 面板展开状态。 |
+| `defaultShownExtent` | `0.42` | Info 面板默认展开的屏幕高度比例。 |
 
----
+### 3. ViewerTheme (动效定制)
 
-### 2. ViewerInteractionConfig (交互配置)
-
-控制手势手感、物理阈值以及桌面端行为。
-
-| 参数 | 默认值 | 说明与场景 |
+| 参数 | 默认值 | 说明 |
 | :--- | :--- | :--- |
-| `infoDragUpDamping` | `0.88` | **阻尼**。上滑拉高信息面板时的阻抗感。 |
-| `viewerDismissDownDamping` | `0.55` | **阻尼**。下拉关闭时的跟手程度感。 |
-| `enableDismissGesture` | `true` | **开关**。设为 false 则只能通过返回键关闭。 |
-| `enableTapToToggleBars`| `true` | **开关**。单击内容区是否切换工具栏显隐。 |
-| `desktopUiMode` | `auto` | **桌面模式**。支持 `auto` (自动识别平台), `force` (强制启用), `never` (仅触屏模式)。 |
-| `infoSyncMode` | `perPage` | **信息同步**。`perPage` 表示每页独立记忆高度；`mirrored` 表示所有页共享高度。 |
+| `zoomDuration` | `250ms` | 双击/程序化缩放的动画时长。 |
+| `zoomCurve` | `easeInOut` | 缩放动画曲线（推荐尝试 `elasticOut`）。 |
+| `barsToggleDuration` | `240ms` | 顶底栏显隐切换时长。 |
 
 ---
 
-### 3. ViewerTheme (主题定制)
+## 🧩 数据模型与上下文
 
-定义查看器的视觉表现，特别是对于“相册卡片模式”的控制。
+### **ViewerItem.extra (业务 Payload)**
+您可以在构造 `ViewerItem` 时传入自定义业务字典：
+```dart
+DefaultViewerItem(
+  id: 'img_1',
+  extra: {'isVIP': true, 'watermark': 'Yuni'}
+)
+```
+随后在任何 Builder 中，通过 `pageCtx.extra` 或 `barCtx.item.extra` 直接获取，实现 UI 联动。
 
-| 参数 | 默认值 | 说明与场景 |
-| :--- | :--- | :--- |
-| `backgroundColor` | `Colors.black` | **背景色**。下拉过程中其透明度会逐渐升高。 |
-| `infoBorderRadius` | `14 (top)` | **圆角**。信息面板底座顶部的圆角。 |
-| `mediaCardInset` | `zero` | **外框边距**。设置为如 `EdgeInsets.all(10)`，则在工具栏显示且未放大时，图片会呈现“悬浮卡片”感。 |
-| `mediaCardBorderRadius`| `0` | **外框圆角**。配合 `mediaCardInset` 使用，实现图片边框的平滑圆角动画。 |
-| `infoShowDuration` | `320ms` | **时长**。由于底层使用 `Ticking` 驱动，该值决定展开吸附的速度。 |
-
----
-
-### 4. 辅助增强组件 (Helper Widgets)
-
-#### **ViewerHero**
-用于实现从缩略图到大图查看器的极致平滑过渡。
-- `tag`: 唯一标识。
-- `imageProvider`: 用于插值的图片提供者（如 `NetworkImage(url)`）。
-- `thumbnailCornerRadius`: 列表中缩略图的圆角。
-- `viewCornerRadius`: 进入大图模式后的圆角（通常设为 18~20）。
-
-#### **ViewerMediaCoverFrame**
-包裹在 `pageBuilder` 内部。
-- `revealProgress`: 传入 `pageCtx.infoRevealProgress`。
-- **作用**: 当底部信息面板上滑时，内容会自动从 `contain` 模式向顶部偏移并转为 `cover` 裁剪感，保持视觉焦点。
-
-#### **ViewerDiffuseBackground**
-专门用于 `backgroundBuilder` 的装饰组件，已彻底剥离图片逻辑，实现 100% 数据驱动。
-- **color**: 静态背景色。传入则直接渲染装饰球，不传则使用默认透明底色。
-- **imageSize**: 图片原始物理尺寸。传入后组件将自动计算“装饰球”在该比例下的对齐锚点（contain 适配），使背景始终贴合媒体内容边缘。
-- **colorProvider**: 异步颜色提供者。业务侧可在此时调用异步工具获色并返回。
-- **sizeProvider**: 异步尺寸提供者。
-- **pageCtx**: 当前页环境。
-- **特性**: 极简且稳健。通过 `item.id` 固化异步元数据，不承担任何图片流解析、渲染或感知职责。开发者拥有对 UI 装饰数据的绝对掌控权。
+### **ViewerPageContext (单页实时状态)**
+- `infoRevealProgress`: `0.0` (收起) ~ `1.0` (展开)。可用于驱动图片向上偏移避让面板。
+- `dismissProgress`: 下拉关闭进度。
 
 ---
 
-### 5. 数据上下文与模型 (Context & Models)
-
-在各构造器回调中，你会获得以下对象：
-
-#### **ViewerItem (数据基类)**
-查看器对每一页数据的抽象契约。框架仅感知以下核心字段：
-- `id`: **必填**。唯一标识（Hero 动画、分页 Key、性能优化）。
-- `hasInfo`: 是否支持显示信息面板。若为 `false`，则自动收起信息并禁止相关手势。
-
-> **自定义模型建议**: 我们不再在基类中强制提供 `payload` 或 `meta` 等通用字段。建议通过 `class MyMedia extends ViewerItem` 定义您业务所需的强类型字段（如 `url`, `title`, `duration` 等），随后在 `pageBuilder` 中进行简单的类型转换即可。
-
-#### **DefaultViewerItem (默认实现)**
-为了快速接入或简单的 URL 查看场景，我们提供了这一默认实现类。它内置了 `payload` (通常存 URL)、`meta` (键值对)、`kind` 等常用字段。
-
-#### **ViewerPageContext (单页实时上下文)**
-在 `pageBuilder`, `backgroundBuilder`, `infoBuilder` 等回调中提供：
-- `index`: 当前页下标。
-- `itemCount`: 列表总数（便于在页面内显示页码）。
-- `infoRevealProgress`: **核心字段**。0.0 为完全隐藏，1.0 为默认高度。可用于联动动画。
-- `availableSize`: 剔除掉信息面板后的有效可视区域。
-- `barsVisible`: 全局顶底栏是否处于显示状态（单击切换）。
-- `dismissProgress`: 下拉关闭进度（0.0~1.0）。
-
-#### **ViewerBarContext (全局栏上下文)**
-仅在 `topBarBuilder` 和 `bottomBarBuilder` 中提供：
-- `index` / `itemCount`: 当前页码与总数。
-- `isZoomed`: 当前内容是否处于放大状态。
-- `dismissProgress`: 下拉关闭进度，可用于在下拉时渐隐工具栏内容。
-- `infoRevealProgress`: 信息面板上拉进度，可用于底栏避让。
-
----
+## 🚀 进阶：不动点缩放原理
+系统使用全局坐标投影公式 `P2 = V - (V - P1) * (S2 / S1)`。无论您的 `MediaViewer` 被嵌套在多复杂的组件树下（如抽屉、对话框、带偏移的层级），点击位置都能精准映射回媒体内容的物理像素点，彻底解决手势漂移。
 
 ## 许可证
 
