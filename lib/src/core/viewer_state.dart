@@ -32,6 +32,7 @@ class ViewerPageContext {
     required this.pageController,
     required this.barsVisible,
     required this.dismissProgress,
+    this.infoRevealProgressListenable,
     this.mediaCardClipRadiusListenable,
     this.extra,
   });
@@ -77,6 +78,45 @@ class ViewerPageContext {
   ///
   /// 自定义 [pageBuilder] 可 [ListenableBuilder] 监听后与系统相册圆角一致。
   final ValueListenable<double>? mediaCardClipRadiusListenable;
+
+  /// 信息面板连续进度的监听器。
+  ///
+  /// 推荐 [ViewerMediaCoverFrame] 使用此字段来避免高频重建导致的视频状态丢失。
+  final ValueListenable<double>? infoRevealProgressListenable;
+
+  ViewerPageContext copyWith({
+    int? index,
+    int? itemCount,
+    ViewerItem? item,
+    InfoState? infoState,
+    double? infoRevealProgress,
+    Size? availableSize,
+    ViewerInteractionConfig? config,
+    ViewerPageController? pageController,
+    bool? barsVisible,
+    double? dismissProgress,
+    ValueListenable<double>? mediaCardClipRadiusListenable,
+    ValueListenable<double>? infoRevealProgressListenable,
+    dynamic extra,
+  }) {
+    return ViewerPageContext(
+      index: index ?? this.index,
+      itemCount: itemCount ?? this.itemCount,
+      item: item ?? this.item,
+      infoState: infoState ?? this.infoState,
+      infoRevealProgress: infoRevealProgress ?? this.infoRevealProgress,
+      availableSize: availableSize ?? this.availableSize,
+      config: config ?? this.config,
+      pageController: pageController ?? this.pageController,
+      barsVisible: barsVisible ?? this.barsVisible,
+      dismissProgress: dismissProgress ?? this.dismissProgress,
+      mediaCardClipRadiusListenable:
+          mediaCardClipRadiusListenable ?? this.mediaCardClipRadiusListenable,
+      infoRevealProgressListenable:
+          infoRevealProgressListenable ?? this.infoRevealProgressListenable,
+      extra: extra ?? this.extra,
+    );
+  }
 }
 
 // ── 顶栏 / 底栏 / overlay 上下文 ─────────────────────────────────────────────

@@ -15,6 +15,8 @@ import 'cases/minimal_case.dart';
 import 'cases/no_info_case.dart';
 import 'cases/extensibility_case.dart';
 import 'cases/paging_case.dart';
+import 'cases/viewer_media_cover_frame_case.dart';
+
 
 void main() {
   runApp(const ExampleApp());
@@ -113,6 +115,11 @@ class _CaseListPage extends StatelessWidget {
         title: '13. 异步分页加载',
         subtitle: 'onLoadMore 自动预加载（无限滚动效果）',
         builder: (_) => const PagingCase(),
+      ),
+      _CaseEntry(
+        title: '14. ViewerMediaCoverFrame 复杂案例',
+        subtitle: '图片叠加、视频适配、全视口自定义布局（插值演示）',
+        builder: (_) => const ViewerMediaCoverFrameCase(),
       ),
     ];
 

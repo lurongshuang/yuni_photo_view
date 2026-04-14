@@ -639,45 +639,28 @@ class _MediaViewerState extends State<MediaViewer>
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('[ViewerLog] MediaViewer.build called');
     final screenH = MediaQuery.of(context).size.height;
+    final shellCfg = widget.config.resolveForShell();
 
-    // 同时监听下拉位移与当前页信息控制器：拖动关闭与信息面板动画都会刷新顶底栏。
-    // Listenable.merge 在每次 build 新建，但 build 仅由 setState 触发，开销可接受。
-    return ListenableBuilder(
-      listenable: Listenable.merge([
-        _dismissOffset,
-        _currentInfoCtrl,
-        _pageCtrlAt(_currentIndex),
-        if (widget.controller != null) widget.controller!,
-      ]),
-      builder: (ctx, _) {
-        final shellCfg = widget.config.resolveForShell();
-        final rawOffset = _dismissOffset.value;
+    // ── 1. 内容主层（含平移与缩放/分页控制） ──
+    final contentLayer = ValueListenableBuilder<double>(
+      valueListenable: _dismissOffset,
+      builder: (context, rawOffset, _) {
         final progress = _dismissProgress(rawOffset);
         final contentDy = rawOffset * widget.config.viewerDismissDownDamping;
-        final bgAlpha = (1.0 - progress).clamp(0.0, 1.0);
-        final barAlpha =
-            widget.config.barsFadeWithDismissProgress ? bgAlpha : 1.0;
 
-        Widget stack = Stack(
-          children: [
-            // 背景（路由非不透明，可透出下层）
-            Positioned.fill(
-              child: ColoredBox(
-                color: widget.theme.backgroundColor.withValues(alpha: bgAlpha),
-              ),
-            ),
-
-            // 分页内容（随下拉平移）
-            Positioned.fill(
-              child: Transform.translate(
-                offset: Offset(0, contentDy),
-                // 与壳内 PhotoView.customChild 配合：双指缩放优先于 PageView 横滑。
-                child: PhotoViewGestureDetectorScope(
+        return Positioned.fill(
+          child: Transform.translate(
+            offset: Offset(0, contentDy),
+            child: ListenableBuilder(
+              listenable: _pageCtrlAt(_currentIndex),
+              builder: (ctx, _) {
+                debugPrint('[ViewerLog] MediaViewer PageView layer rebuild (dismiss: $progress, zoom: ${_pageCtrlAt(_currentIndex).isZoomed})');
+                return PhotoViewGestureDetectorScope(
                   axis: Axis.horizontal,
                   child: PageView.builder(
                     controller: _pageController,
-                    // 放大时禁止横滑，单指拖动交给 PhotoView。
                     physics: _pageCtrlAt(_currentIndex).isZoomed
                         ? const NeverScrollableScrollPhysics()
                         : (shellCfg.enableHorizontalPaging
@@ -704,136 +687,181 @@ class _MediaViewerState extends State<MediaViewer>
                       screenHeight: screenH,
                       onDismissUpdate: _onDismissUpdate,
                       onDismissEnd: _onDismissEnd,
-                      onContentTap:
-                          _cfg.enableTapToToggleBars ? _toggleBars : null,
+                      onContentTap: _cfg.enableTapToToggleBars ? _toggleBars : null,
                     ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
+          ),
+        );
+      },
+    );
 
-            if (widget.config.usesDesktopUi)
-              Positioned.fill(
+    // ── 2. 根布局 ──
+    Widget stack = Stack(
+      children: [
+        // 背景层：仅监听下拉位移
+        ValueListenableBuilder<double>(
+          valueListenable: _dismissOffset,
+          builder: (context, rawOffset, _) {
+            final progress = _dismissProgress(rawOffset);
+            final bgAlpha = (1.0 - progress).clamp(0.0, 1.0);
+            return Positioned.fill(
+              child: ColoredBox(
+                color: widget.theme.backgroundColor.withValues(alpha: bgAlpha),
+              ),
+            );
+          },
+        ),
+
+        // 内容平移与分页层
+        contentLayer,
+
+        // Desktop UI 层
+        if (widget.config.usesDesktopUi)
+          ListenableBuilder(
+            listenable: Listenable.merge([_dismissOffset, _currentInfoCtrl]),
+            builder: (context, _) {
+              final progress = _dismissProgress(_dismissOffset.value);
+              return Positioned.fill(
                 child: widget.desktopChromeBuilder != null
                     ? widget.desktopChromeBuilder!(
-                        ctx,
+                        context,
                         _desktopChromeContext(progress),
                       )
                     : DefaultViewerDesktopChrome(
                         desktopCtx: _desktopChromeContext(progress),
                       ),
-              ),
+              );
+            },
+          ),
 
-            // 顶栏：外层 Opacity 跟下拉进度；内层 AnimatedOpacity 跟单击显隐。
-            // IgnorePointer：隐藏时不抢点击。
-            if (widget.topBarBuilder != null)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: IgnorePointer(
-                  ignoring: !_barsVisible,
-                  child: Opacity(
-                    opacity: barAlpha,
-                    child: AnimatedOpacity(
-                      duration: widget.theme.barsToggleDuration,
-                      curve: widget.theme.barsToggleCurve,
-                      opacity: _barsVisible ? 1.0 : 0.0,
-                      child: widget.topBarBuilder!(ctx, _barCtx(progress)),
+        // 顶底栏层：监听多方状态
+        ListenableBuilder(
+          listenable: Listenable.merge([
+            _dismissOffset,
+            _currentInfoCtrl,
+            _pageCtrlAt(_currentIndex),
+            if (widget.controller != null) widget.controller!,
+          ]),
+          builder: (ctx, _) {
+            final progress = _dismissProgress(_dismissOffset.value);
+            final bgAlpha = (1.0 - progress).clamp(0.0, 1.0);
+            final barAlpha =
+                widget.config.barsFadeWithDismissProgress ? bgAlpha : 1.0;
+
+            return Stack(
+              children: [
+                if (widget.topBarBuilder != null)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      ignoring: !_barsVisible,
+                      child: Opacity(
+                        opacity: barAlpha,
+                        child: AnimatedOpacity(
+                          duration: widget.theme.barsToggleDuration,
+                          curve: widget.theme.barsToggleCurve,
+                          opacity: _barsVisible ? 1.0 : 0.0,
+                          child: widget.topBarBuilder!(ctx, _barCtx(progress)),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
 
-            if (widget.bottomBarBuilder != null)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: IgnorePointer(
-                  ignoring: !_barsVisible,
-                  child: Opacity(
-                    opacity: barAlpha,
-                    child: AnimatedOpacity(
-                      duration: widget.theme.barsToggleDuration,
-                      curve: widget.theme.barsToggleCurve,
-                      opacity: _barsVisible ? 1.0 : 0.0,
-                      child: widget.bottomBarBuilder!(ctx, _barCtx(progress)),
+                if (widget.bottomBarBuilder != null)
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      ignoring: !_barsVisible,
+                      child: Opacity(
+                        opacity: barAlpha,
+                        child: AnimatedOpacity(
+                          duration: widget.theme.barsToggleDuration,
+                          curve: widget.theme.barsToggleCurve,
+                          opacity: _barsVisible ? 1.0 : 0.0,
+                          child:
+                              widget.bottomBarBuilder!(ctx, _barCtx(progress)),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
 
-            if (widget.overlayBuilder != null)
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: false,
-                  child: widget.overlayBuilder!(ctx, _barCtx(progress)),
-                ),
-              ),
-          ],
-        );
-
-        if (widget.config.usesDesktopUi) {
-          final shortcuts = <ShortcutActivator, VoidCallback>{
-            const SingleActivator(LogicalKeyboardKey.arrowLeft):
-                _animateToPreviousPage,
-            const SingleActivator(LogicalKeyboardKey.arrowRight):
-                _animateToNextPage,
-          };
-          if (_cfg.enableZoom) {
-            shortcuts[const SingleActivator(
-              LogicalKeyboardKey.equal,
-              control: true,
-            )] = _requestZoomInOnCurrentPage;
-            shortcuts[const SingleActivator(
-              LogicalKeyboardKey.equal,
-              meta: true,
-            )] = _requestZoomInOnCurrentPage;
-            shortcuts[const SingleActivator(
-              LogicalKeyboardKey.numpadAdd,
-              control: true,
-            )] = _requestZoomInOnCurrentPage;
-            shortcuts[const SingleActivator(
-              LogicalKeyboardKey.minus,
-              control: true,
-            )] = _requestZoomOutOnCurrentPage;
-            shortcuts[const SingleActivator(
-              LogicalKeyboardKey.minus,
-              meta: true,
-            )] = _requestZoomOutOnCurrentPage;
-            shortcuts[const SingleActivator(
-              LogicalKeyboardKey.numpadSubtract,
-              control: true,
-            )] = _requestZoomOutOnCurrentPage;
-          }
-          shortcuts[const SingleActivator(
-            LogicalKeyboardKey.keyI,
-            control: true,
-          )] = () {
-            if (_currentHasInfoPanel) _toggleInfoFromChrome();
-          };
-          shortcuts[const SingleActivator(
-            LogicalKeyboardKey.keyI,
-            meta: true,
-          )] = () {
-            if (_currentHasInfoPanel) _toggleInfoFromChrome();
-          };
-          shortcuts[const SingleActivator(LogicalKeyboardKey.escape)] =
-              _closeViewerFromChrome;
-
-          stack = CallbackShortcuts(
-            bindings: shortcuts,
-            child: Focus(
-              autofocus: true,
-              child: stack,
-            ),
-          );
-        }
-
-        return stack;
-      },
+                if (widget.overlayBuilder != null)
+                  Positioned.fill(
+                    child: widget.overlayBuilder!(ctx, _barCtx(progress)),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
     );
+
+    // ── 3. 快捷键（桌面版） ──
+    if (widget.config.usesDesktopUi) {
+      final shortcuts = <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.arrowLeft):
+            _animateToPreviousPage,
+        const SingleActivator(LogicalKeyboardKey.arrowRight):
+            _animateToNextPage,
+      };
+      if (_cfg.enableZoom) {
+        shortcuts[const SingleActivator(
+          LogicalKeyboardKey.equal,
+          control: true,
+        )] = _requestZoomInOnCurrentPage;
+        shortcuts[const SingleActivator(
+          LogicalKeyboardKey.equal,
+          meta: true,
+        )] = _requestZoomInOnCurrentPage;
+        shortcuts[const SingleActivator(
+          LogicalKeyboardKey.numpadAdd,
+          control: true,
+        )] = _requestZoomInOnCurrentPage;
+        shortcuts[const SingleActivator(
+          LogicalKeyboardKey.minus,
+          control: true,
+        )] = _requestZoomOutOnCurrentPage;
+        shortcuts[const SingleActivator(
+          LogicalKeyboardKey.minus,
+          meta: true,
+        )] = _requestZoomOutOnCurrentPage;
+        shortcuts[const SingleActivator(
+          LogicalKeyboardKey.numpadSubtract,
+          control: true,
+        )] = _requestZoomOutOnCurrentPage;
+      }
+      shortcuts[const SingleActivator(
+        LogicalKeyboardKey.keyI,
+        control: true,
+      )] = () {
+        if (_currentHasInfoPanel) _toggleInfoFromChrome();
+      };
+      shortcuts[const SingleActivator(
+        LogicalKeyboardKey.keyI,
+        meta: true,
+      )] = () {
+        if (_currentHasInfoPanel) _toggleInfoFromChrome();
+      };
+      shortcuts[const SingleActivator(LogicalKeyboardKey.escape)] =
+          _closeViewerFromChrome;
+
+      stack = CallbackShortcuts(
+        bindings: shortcuts,
+        child: Focus(
+          autofocus: true,
+          child: stack,
+        ),
+      );
+    }
+
+    return stack;
   }
 }
 

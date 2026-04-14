@@ -1,5 +1,6 @@
 import 'dart:ui' show lerpDouble;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
 
@@ -108,6 +109,17 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   // 便于壳层在需要时对缩放包装调用 reset（例如翻页复用）。
   final GlobalKey<_ZoomableMediaWrapperState> _zoomKey = GlobalKey();
 
+  /// 缓存主媒体组件，避免在信息面板滑动动画中频繁调用 pageBuilder 导致状态丢失（如视频播放中断）。
+  Widget? _cachedMedia;
+  ViewerItem? _lastItem;
+  ViewerPageBuilder? _lastBuilder;
+
+  /// 用于保护媒体组件状态的 GlobalKey，确保在从 PhotoView 移出时不会被重置（针对视频等有力）。
+  GlobalObjectKey? _mediaGlobalKey;
+
+  /// 用于向子组件局部透传信息面板进度，不触发整树重建。
+  late final ValueNotifier<double> _infoRevealProgressNotifier;
+
   // ── 辅助 ───────────────────────────────────────────────────────────────
 
   InfoSheetController get _info => widget.infoController;
@@ -118,14 +130,25 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   @override
   void initState() {
     super.initState();
+    _infoRevealProgressNotifier = ValueNotifier<double>(_info.revealProgress);
+    _info.addListener(_onInfoChange);
+
     if (_mediaCardChromeEnabled(widget.theme)) {
       _mediaCardClipNotifier =
           ValueNotifier<double>(_mediaCardInitialClipRadius());
     }
   }
 
+  void _onInfoChange() {
+    if (_infoRevealProgressNotifier.value != _info.revealProgress) {
+      _infoRevealProgressNotifier.value = _info.revealProgress;
+    }
+  }
+
   @override
   void dispose() {
+    _info.removeListener(_onInfoChange);
+    _infoRevealProgressNotifier.dispose();
     _mediaCardClipNotifier?.dispose();
     super.dispose();
   }
@@ -235,6 +258,7 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('[ViewerLog] ViewerPageShell.build for index ${widget.index}');
     final screenH = _resolveScreenHeight(context);
 
     // 先写入高度，便于程序调用 show() 时未到首次拖动也能算对默认高度。
@@ -243,6 +267,7 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
     return ListenableBuilder(
       listenable: widget.pageController,
       builder: (ctx, _) {
+        debugPrint('[ViewerLog] ViewerPageShell outer ListenableBuilder rebuild');
         final isZoomed = widget.pageController.isZoomed;
         // 放大时不注册竖拖，把单指平移交给 PhotoView；单击切栏放在 PhotoView 的 onTapUp，避免与外层 GestureDetector 抢竞技场。
         return GestureDetector(
@@ -251,19 +276,19 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
               isZoomed ? null : (d) => _onDragStart(d, screenH),
           onVerticalDragUpdate: isZoomed ? null : _onDragUpdate,
           onVerticalDragEnd: isZoomed ? null : _onDragEnd,
-          child: ListenableBuilder(
-            listenable: _info,
-            builder: (ctx2, _) => _buildLayout(ctx2, screenH),
-          ),
+          child: _buildLayout(ctx, screenH),
         );
       },
     );
   }
 
   Widget _buildLayout(BuildContext ctx, double screenH) {
+    // 注意：ListenableBuilder 不再包裹整个布局，
+    // 我们手动在需要的地方通过 ListenableBuilder 或 ValueListenableBuilder 局部刷新。
+    
+    final revealProgress = _info.revealProgress;
     final sheetH = _info.sheetHeight;
     final contentH = (screenH - sheetH).clamp(0.0, screenH);
-    final revealProgress = _info.revealProgress;
     final screenW = MediaQuery.of(ctx).size.width;
 
     final pageCtx = ViewerPageContext(
@@ -272,6 +297,7 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       item: widget.item,
       infoState: _info.state,
       infoRevealProgress: revealProgress,
+      infoRevealProgressListenable: _infoRevealProgressNotifier,
       availableSize: Size(screenW, contentH),
       config: _cfg,
       pageController: widget.pageController,
@@ -280,17 +306,33 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       mediaCardClipRadiusListenable: _mediaCardClipNotifier,
     );
 
+    // ── 缓存策略 ──
+    // 只有当项或 Builder 变化时才重新调用。滑动 revealProgress 时不重新生成 widget 实例。
+    if (_cachedMedia == null ||
+        _lastItem != widget.item ||
+        _lastBuilder != widget.pageBuilder) {
+      debugPrint('[ViewerLog] Calling pageBuilder to refresh _cachedMedia');
+      _mediaGlobalKey = GlobalObjectKey(widget.item.id);
+      _cachedMedia = KeyedSubtree(
+        key: _mediaGlobalKey,
+        child: widget.pageBuilder(ctx, pageCtx),
+      );
+      _lastItem = widget.item;
+      _lastBuilder = widget.pageBuilder;
+    }
+
     final pageOverlay = widget.pageOverlayBuilder?.call(ctx, pageCtx);
     final underMedia = widget.underMediaBuilder?.call(ctx, pageCtx);
 
     final zoomCore = _ZoomableMediaWrapper(
       key: _zoomKey,
-      enabled: _cfg.enableZoom && revealProgress < 0.05,
+      revealProgressListenable: _infoRevealProgressNotifier,
+      enableZoom: _cfg.enableZoom,
       enableDoubleTap: _cfg.enableDoubleTapZoom,
       pageController: widget.pageController,
       theme: widget.theme,
       onSingleTap: _cfg.enableTapToToggleBars ? widget.onContentTap : null,
-      child: widget.pageBuilder(ctx, pageCtx),
+      child: _cachedMedia!,
     );
 
     final theme = widget.theme;
@@ -314,59 +356,77 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       );
     }
 
-    return Stack(
-      children: [
-        if (widget.backgroundBuilder != null)
-          Positioned.fill(
-            child: widget.backgroundBuilder!(ctx, pageCtx),
-          ),
+    return ListenableBuilder(
+      listenable: _info,
+      child: mediaZoom,
+      builder: (ctx, stableMedia) {
+        debugPrint('[ViewerLog] ViewerPageShell inner ListenableBuilder rebuild (revealProgress: ${_info.revealProgress})');
+        final revealProgress = _info.revealProgress;
+        final sheetH = _info.sheetHeight;
+        final contentH = (screenH - sheetH).clamp(0.0, screenH);
+        
+        // 重新构建一个局部的上下文，仅刷新非缓存的部分
+        final animationCtx = pageCtx.copyWith(
+          infoRevealProgress: revealProgress,
+          availableSize: Size(screenW, contentH),
+          infoState: _info.state,
+        );
 
-        if (underMedia != null)
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: contentH,
-            child: underMedia,
-          ),
+        return Stack(
+          children: [
+            if (widget.backgroundBuilder != null)
+              Positioned.fill(
+                child: widget.backgroundBuilder!(ctx, animationCtx),
+              ),
 
-        // 主内容视口：高度随信息面板上移变矮；内容顶对齐，底部由 ClipRect 裁切。
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          height: contentH,
-          child: _MediaViewportWrapper(
-            revealProgress: revealProgress,
-            child: mediaZoom,
-          ),
-        ),
+            if (underMedia != null)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: contentH,
+                child: underMedia,
+              ),
 
-        if (pageOverlay != null)
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: contentH,
-            child: pageOverlay,
-          ),
-
-        if (_hasInfo && sheetH > 0)
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: sheetH,
-            child: Opacity(
-              opacity: _info.contentOpacity,
-              child: _InfoSheetSurface(
-                theme: widget.theme,
-                infoController: _info,
-                child: widget.infoBuilder!(ctx, pageCtx),
+            // 主内容视口：高度随信息面板上移变矮；内容顶对齐，底部由 ClipRect 裁切。
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: contentH,
+              child: _MediaViewportWrapper(
+                revealProgress: revealProgress,
+                child: stableMedia!,
               ),
             ),
-          ),
-      ],
+
+            if (pageOverlay != null)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: contentH,
+                child: pageOverlay,
+              ),
+
+            if (_hasInfo && sheetH > 0)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: sheetH,
+                child: Opacity(
+                  opacity: _info.contentOpacity,
+                  child: _InfoSheetSurface(
+                    theme: widget.theme,
+                    infoController: _info,
+                    child: widget.infoBuilder!(ctx, animationCtx),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -520,7 +580,8 @@ class _ZoomableMediaWrapper extends StatefulWidget {
   const _ZoomableMediaWrapper({
     super.key,
     required this.child,
-    required this.enabled,
+    required this.revealProgressListenable,
+    required this.enableZoom,
     required this.enableDoubleTap,
     required this.pageController,
     required this.theme,
@@ -528,7 +589,8 @@ class _ZoomableMediaWrapper extends StatefulWidget {
   });
 
   final Widget child;
-  final bool enabled;
+  final ValueListenable<double> revealProgressListenable;
+  final bool enableZoom;
   final bool enableDoubleTap;
   final ViewerPageController pageController;
   final ViewerTheme theme;
@@ -574,13 +636,9 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
   @override
   void didUpdateWidget(_ZoomableMediaWrapper old) {
     super.didUpdateWidget(old);
-    // 信息面板将起时关闭缩放：立即回到 1×。
-    if (old.enabled && !widget.enabled && _isZoomed) {
-      _animCtrl.stop();
-      _photoCtrl.updateMultiple(scale: _kMinScale, position: Offset.zero);
-      _scaleStateCtrl.scaleState = PhotoViewScaleState.initial;
-      widget.pageController.reportContentScale(_kMinScale);
-    }
+    // 注意：enabled 现在在内部由 ValueListenableBuilder 处理，
+    // 这里不再需要根据 widget.enabled 来立即重置缩放，
+    // 因为进度变化会自动触发重跑 build 并由 ValueListenableBuilder 处理逻辑。
   }
 
   @override
@@ -600,7 +658,11 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
   void _onPageCtrlForProgrammaticZoom() {
     final kind = widget.pageController.takeProgrammaticZoom();
     if (kind == null) return;
-    if (!widget.enabled) return;
+    
+    // 只有在面板未展开时才响应缩放请求
+    final revealProgress = widget.revealProgressListenable.value;
+    if (!widget.enableZoom || revealProgress >= 0.05) return;
+    
     switch (kind) {
       case ViewerProgrammaticZoomKind.zoomIn:
         _applyStepScale(1.2);
@@ -715,37 +777,58 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.enabled) {
-      return widget.child;
-    }
+    return ValueListenableBuilder<double>(
+      valueListenable: widget.revealProgressListenable,
+      builder: (context, revealProgress, child) {
+        final bool enabled = widget.enableZoom && revealProgress < 0.01;
+        debugPrint('[ViewerLog] _ZoomableMediaWrapper.build revealProgress: $revealProgress, enabled: $enabled');
 
-    return Listener(
-      onPointerDown: (event) {
-        _lastGlobalTapPosition = event.position;
-        debugPrint('[ViewerLog] PointerDown: ${event.position}');
+        if (!enabled) {
+          // 信息面板即将起时，如果当前处于放大状态，立即重置 PhotoView
+          if (_isZoomed) {
+            _animCtrl.stop();
+            // 注意：直接 updateMultiple 可能在 build 过程中触发异常，
+            // 考虑用 addPostFrameCallback 或直接让 PhotoView 响应状态变化。
+            // 这里我们先进行简单的重置，PhotoView 会根据控制器状态刷新。
+            _photoCtrl.updateMultiple(scale: _kMinScale, position: Offset.zero);
+            _scaleStateCtrl.scaleState = PhotoViewScaleState.initial;
+            // 报告缩放已重置，否则 PageView 可能会被锁死。
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              widget.pageController.reportContentScale(_kMinScale);
+            });
+          }
+          return widget.child;
+        }
+
+        return Listener(
+          onPointerDown: (event) {
+            _lastGlobalTapPosition = event.position;
+            debugPrint('[ViewerLog] PointerDown: ${event.position}');
+          },
+          child: SizedBox.expand(
+            key: _photoViewportKey,
+            child: PhotoView.customChild(
+              controller: _photoCtrl,
+              scaleStateController: _scaleStateCtrl,
+              tightMode: true,
+              minScale: _kMinScale,
+              maxScale: _kMaxScale,
+              initialScale: _kMinScale,
+              backgroundDecoration: const BoxDecoration(color: Colors.transparent),
+              gestureDetectorBehavior: HitTestBehavior.translucent,
+              onTapDown: (_, details, __) {
+                debugPrint('[ViewerLog] PhotoView.onTapDown');
+              },
+              onTapUp: (_, details, __) {
+                debugPrint('[ViewerLog] PhotoView.onTapUp');
+                widget.onSingleTap?.call();
+              },
+              scaleStateCycle: _handleDoubleTap,
+              child: widget.child,
+            ),
+          ),
+        );
       },
-      child: SizedBox.expand(
-        key: _photoViewportKey,
-        child: PhotoView.customChild(
-          controller: _photoCtrl,
-          scaleStateController: _scaleStateCtrl,
-          tightMode: true,
-          minScale: _kMinScale,
-          maxScale: _kMaxScale,
-          initialScale: _kMinScale,
-          backgroundDecoration: const BoxDecoration(color: Colors.transparent),
-          gestureDetectorBehavior: HitTestBehavior.translucent,
-          onTapDown: (_, details, __) {
-            debugPrint('[ViewerLog] PhotoView.onTapDown');
-          },
-          onTapUp: (_, details, __) {
-            debugPrint('[ViewerLog] PhotoView.onTapUp');
-            widget.onSingleTap?.call();
-          },
-          scaleStateCycle: _handleDoubleTap,
-          child: widget.child,
-        ),
-      ),
     );
   }
 }
