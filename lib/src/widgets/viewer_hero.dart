@@ -37,8 +37,8 @@ import 'package:flutter/material.dart';
 ///   ),
 /// )
 ///
-/// // pageBuilder 侧：用 ViewerHero 替换原生 Hero
-/// pageBuilder: (ctx, pageCtx) => ViewerHero(
+/// // pageBuilder 侧：图片内容使用 ViewerHero.image
+/// pageBuilder: (ctx, pageCtx) => ViewerHero.image(
 ///   tag: 'photo_${pageCtx.item.id}',
 ///   imageProvider: NetworkImage(pageCtx.item.payload as String),
 ///   child: ViewerMediaCoverFrame(
@@ -46,17 +46,32 @@ import 'package:flutter/material.dart';
 ///     child: Image.network(pageCtx.item.payload as String),
 ///   ),
 /// )
+///
+/// // 非图片 widget：使用 ViewerHero.custom
+/// ViewerHero.custom(
+///   tag: 'card_${pageCtx.item.id}',
+///   child: MyCustomVideoCard(item: pageCtx.item),
+/// )
 /// ```
 class ViewerHero extends StatelessWidget {
-  const ViewerHero({
+  const ViewerHero.image({
     required this.tag,
     required this.child,
-    required this.imageProvider,
+    required ImageProvider this.imageProvider,
     this.thumbnailCornerRadius = 8.0,
     this.viewCornerRadius = 0.0,
     this.shuttleBuilder,
     super.key,
   });
+
+  const ViewerHero.custom({
+    required this.tag,
+    required this.child,
+    this.shuttleBuilder,
+    super.key,
+  })  : imageProvider = null,
+        thumbnailCornerRadius = 8.0,
+        viewCornerRadius = 0.0;
 
   /// Hero 标签，与列表/网格侧的 Hero tag 保持一致。
   final Object tag;
@@ -64,12 +79,18 @@ class ViewerHero extends StatelessWidget {
   /// 查看页内正常展示的内容（多为 [ViewerMediaCoverFrame] 包一层图片）。
   final Widget child;
 
-  /// 图片提供者。飞行期间直接从已有缓存读取，无需重新加载。
-  final ImageProvider imageProvider;
+  /// 图片提供者。
+  ///
+  /// 仅 [ViewerHero.image] 会提供该值，并启用图片专用 shuttle：
+  /// 在缩略图 `cover` 与查看区 `contain` 之间做固定 scale 插值，减轻图片闪烁。
+  ///
+  /// [ViewerHero.custom] 下该值固定为 `null`，会退回 Flutter 原生 [Hero] 飞行逻辑，
+  /// 或使用显式传入的 [shuttleBuilder]。
+  final ImageProvider? imageProvider;
 
   /// 与列表/网格侧 ClipRRect 圆角保持一致，默认 `8.0`。
   final double thumbnailCornerRadius;
-  
+
   /// 到达查看区一端时的圆角，默认 `0.0`。
   /// 若设置了 [ViewerTheme.mediaCardBorderRadius]，建议传入该值以消除闪烁。
   final double viewCornerRadius;
@@ -83,7 +104,8 @@ class ViewerHero extends StatelessWidget {
   Widget build(BuildContext context) {
     return Hero(
       tag: tag,
-      flightShuttleBuilder: shuttleBuilder ?? _defaultShuttleBuilder,
+      flightShuttleBuilder: shuttleBuilder ??
+          (imageProvider != null ? _defaultShuttleBuilder : null),
       child: child,
     );
   }
@@ -115,7 +137,7 @@ class ViewerHero extends StatelessWidget {
     }
 
     return _HeroShuttleWidget(
-      imageProvider: imageProvider,
+      imageProvider: imageProvider!,
       animation: animation,
       thumbnailCornerRadius: thumbnailCornerRadius,
       viewCornerRadius: viewCornerRadius,

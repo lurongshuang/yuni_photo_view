@@ -8,6 +8,7 @@ import 'cases/damping_case.dart';
 import 'cases/desktop_custom_chrome_case.dart';
 import 'cases/full_custom_bar_case.dart';
 import 'cases/hero_case.dart';
+import 'cases/hero_custom_case.dart';
 import 'cases/mirrored_info_case.dart';
 import 'cases/media_card_chrome_case.dart';
 import 'cases/minimal_case.dart';
@@ -80,31 +81,36 @@ class _CaseListPage extends StatelessWidget {
       ),
       _CaseEntry(
         title: '7. Hero 动画',
-        subtitle: '从列表缩略图进入，返回时 Hero 回程',
+        subtitle: '图片专用 ViewerHero.image，共享元素平滑过渡',
         builder: (_) => const HeroCase(),
       ),
       _CaseEntry(
-        title: '8. 阻尼参数调试',
+        title: '8. Hero 自定义 Widget',
+        subtitle: '非图片卡片使用 ViewerHero.custom，也能正常 Hero',
+        builder: (_) => const HeroCustomCase(),
+      ),
+      _CaseEntry(
+        title: '9. 阻尼参数调试',
         subtitle: '实时滑块调整三类阻尼系数',
         builder: (_) => const DampingCase(),
       ),
       _CaseEntry(
-        title: '9. Info 镜像同步',
+        title: '10. Info 镜像同步',
         subtitle: 'infoSyncMode=mirrored，翻页保持展开',
         builder: (_) => const MirroredInfoCase(),
       ),
       _CaseEntry(
-        title: '10. 桌面自定义控件条',
+        title: '11. 桌面自定义控件条',
         subtitle: 'desktopChromeBuilder + 业务按钮示例（force 模式全平台可预览）',
         builder: (_) => const DesktopCustomChromeCase(),
       ),
       _CaseEntry(
-        title: '11. 扩展性：插槽与动效魔改',
+        title: '12. 扩展性：插槽与动效魔改',
         subtitle: 'underMediaBuilder 立体投影、自定义 Duration 与特制 extra 水印',
         builder: (_) => const ExtensibilityCase(),
       ),
       _CaseEntry(
-        title: '12. 异步分页加载',
+        title: '13. 异步分页加载',
         subtitle: 'onLoadMore 自动预加载（无限滚动效果）',
         builder: (_) => const PagingCase(),
       ),

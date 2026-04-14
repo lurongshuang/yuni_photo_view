@@ -59,7 +59,7 @@ class HeroCase extends StatelessWidget {
 
         // 使用 ViewerHero 替代原生 Hero，减轻 cover/contain 切换时的闪烁。
         // thumbnailCornerRadius 必须与列表缩略图的 ClipRRect 圆角一致（本例为 8）。
-        return ViewerHero(
+        return ViewerHero.image(
           tag: 'hero_${pageCtx.item.id}',
           imageProvider: NetworkImage(url),
           thumbnailCornerRadius: 8,
