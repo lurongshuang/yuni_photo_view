@@ -168,7 +168,7 @@ class DemoData {
     DefaultViewerItem(
       id: 'vid_1',
       kind: 'video',
-      payload: 'https://www.w3schools.com/html/mov_bbb.mp4',
+      payload: 'https://sns-video-hw.xhscdn.com/pre_post/1040g2t031uo3mlo31m005nfd3og08uof4get11g',
       meta: {'title': '示例视频 1', 'duration': '0:10'},
       hasInfo: true,
     ),

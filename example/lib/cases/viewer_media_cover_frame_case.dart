@@ -41,7 +41,7 @@ class ViewerMediaCoverFrameCase extends StatelessWidget {
         id: 'tall_video',
         kind: 'video',
         payload:
-            'https://assets.mixkit.co/videos/preview/mixkit-vertical-shot-of-a-beautiful-girl-smiling-at-the-camera-43407-preview.mp4',
+            'https://sns-video-hw.xhscdn.com/pre_post/1040g2t031ucqi83n1s704a4e9ih49np5omkdmgg',
         meta: {'title': '竖屏视频（测试）'},
         hasInfo: true,
       ),
@@ -216,7 +216,8 @@ class _VideoFrameItemState extends State<_VideoFrameItem> {
   @override
   void initState() {
     super.initState();
-    debugPrint('[ViewerLog] _VideoFrameItemState.initState for ${widget.pageCtx.item.id}');
+    debugPrint(
+        '[ViewerLog] _VideoFrameItemState.initState for ${widget.pageCtx.item.id}');
     _controller = VideoPlayerController.networkUrl(
       Uri.parse(widget.pageCtx.item.payload as String),
     )..initialize().then((_) {
@@ -229,14 +230,16 @@ class _VideoFrameItemState extends State<_VideoFrameItem> {
 
   @override
   void dispose() {
-    debugPrint('[ViewerLog] _VideoFrameItemState.dispose for ${widget.pageCtx.item.id}');
+    debugPrint(
+        '[ViewerLog] _VideoFrameItemState.dispose for ${widget.pageCtx.item.id}');
     _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('[ViewerLog] _VideoFrameItemState.build for ${widget.pageCtx.item.id}');
+    debugPrint(
+        '[ViewerLog] _VideoFrameItemState.build for ${widget.pageCtx.item.id}');
     if (_controller == null || !_controller!.value.isInitialized) {
       return ViewerMediaCoverFrame(
         revealProgressListenable: widget.pageCtx.infoRevealProgressListenable,
