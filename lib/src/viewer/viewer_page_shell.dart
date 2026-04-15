@@ -115,7 +115,7 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   ViewerPageBuilder? _lastBuilder;
 
   /// 用于保护媒体组件状态的 GlobalKey，确保在从 PhotoView 移出时不会被重置（针对视频等有力）。
-  GlobalObjectKey? _mediaGlobalKey;
+  final GlobalKey _mediaGlobalKey = GlobalKey();
 
   /// 用于向子组件局部透传信息面板进度，不触发整树重建。
   late final ValueNotifier<double> _infoRevealProgressNotifier;
@@ -312,7 +312,6 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
         _lastItem != widget.item ||
         _lastBuilder != widget.pageBuilder) {
       debugPrint('[ViewerLog] Calling pageBuilder to refresh _cachedMedia');
-      _mediaGlobalKey = GlobalObjectKey(widget.item.id);
       _cachedMedia = KeyedSubtree(
         key: _mediaGlobalKey,
         child: widget.pageBuilder(ctx, pageCtx),
@@ -779,25 +778,18 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
   Widget build(BuildContext context) {
     return ValueListenableBuilder<double>(
       valueListenable: widget.revealProgressListenable,
-      builder: (context, revealProgress, child) {
+      builder: (context, revealProgress, _) {
         final bool enabled = widget.enableZoom && revealProgress < 0.01;
         debugPrint('[ViewerLog] _ZoomableMediaWrapper.build revealProgress: $revealProgress, enabled: $enabled');
 
-        if (!enabled) {
-          // 信息面板即将起时，如果当前处于放大状态，立即重置 PhotoView
-          if (_isZoomed) {
-            _animCtrl.stop();
-            // 注意：直接 updateMultiple 可能在 build 过程中触发异常，
-            // 考虑用 addPostFrameCallback 或直接让 PhotoView 响应状态变化。
-            // 这里我们先进行简单的重置，PhotoView 会根据控制器状态刷新。
-            _photoCtrl.updateMultiple(scale: _kMinScale, position: Offset.zero);
-            _scaleStateCtrl.scaleState = PhotoViewScaleState.initial;
-            // 报告缩放已重置，否则 PageView 可能会被锁死。
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              widget.pageController.reportContentScale(_kMinScale);
-            });
-          }
-          return widget.child;
+        // 当不应响应手势时（如信息面板即将拉起），如果当前处于放大状态，立即重置 PhotoView
+        if (!enabled && _isZoomed) {
+          _animCtrl.stop();
+          _photoCtrl.updateMultiple(scale: _kMinScale, position: Offset.zero);
+          _scaleStateCtrl.scaleState = PhotoViewScaleState.initial;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            widget.pageController.reportContentScale(_kMinScale);
+          });
         }
 
         return Listener(
@@ -816,12 +808,15 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
               initialScale: _kMinScale,
               backgroundDecoration: const BoxDecoration(color: Colors.transparent),
               gestureDetectorBehavior: HitTestBehavior.translucent,
+              disableGestures: !enabled,
               onTapDown: (_, details, __) {
                 debugPrint('[ViewerLog] PhotoView.onTapDown');
               },
               onTapUp: (_, details, __) {
                 debugPrint('[ViewerLog] PhotoView.onTapUp');
-                widget.onSingleTap?.call();
+                if (enabled) {
+                  widget.onSingleTap?.call();
+                }
               },
               scaleStateCycle: _handleDoubleTap,
               child: widget.child,
