@@ -12,6 +12,8 @@ class MediaViewerController extends ChangeNotifier {
   InfoState _currentInfoState = InfoState.hidden;
   double _dismissProgress = 0.0;
   bool _barsVisible = true;
+  /// 顶栏、底栏显隐状态的监听器，支持局部刷新。
+  late final ValueNotifier<bool> barsVisibleNotifier = ValueNotifier(_barsVisible);
 
   // 由 MediaViewer 在挂载时注入，勿在外部赋值。
   VoidCallback? _jumpToPageCallback;
@@ -22,6 +24,8 @@ class MediaViewerController extends ChangeNotifier {
   VoidCallback? _zoomOutCallback;
   VoidCallback? _zoomResetCallback;
   void Function(List<ViewerItem>)? _appendItemsCallback;
+  void Function(String)? _removeItemCallback;
+  void Function(ViewerItem)? _updateItemCallback;
   int _pendingJumpIndex = 0;
 
   // ── 只读状态 ─────────────────────────────────────────────────────────────
@@ -65,6 +69,7 @@ class MediaViewerController extends ChangeNotifier {
   void updateBarsVisible(bool visible) {
     if (_barsVisible == visible) return;
     _barsVisible = visible;
+    barsVisibleNotifier.value = visible;
     notifyListeners();
   }
 
@@ -78,6 +83,8 @@ class MediaViewerController extends ChangeNotifier {
     VoidCallback? zoomContentOut,
     VoidCallback? resetContentZoom,
     void Function(List<ViewerItem>)? appendItems,
+    void Function(String)? removeItem,
+    void Function(ViewerItem)? updateItem,
   }) {
     _jumpToPageCallback = jumpToPage;
     _showInfoCallback = showInfo;
@@ -87,6 +94,8 @@ class MediaViewerController extends ChangeNotifier {
     _zoomOutCallback = zoomContentOut;
     _zoomResetCallback = resetContentZoom;
     _appendItemsCallback = appendItems;
+    _removeItemCallback = removeItem;
+    _updateItemCallback = updateItem;
   }
 
   // ── 对外指令 ───────────────────────────────────────────────────────────────
@@ -133,6 +142,16 @@ class MediaViewerController extends ChangeNotifier {
   /// 向查看器末尾追加新的媒体项目（异步分页场景使用）。
   void appendItems(List<ViewerItem> newItems) {
     _appendItemsCallback?.call(newItems);
+  }
+
+  /// 从查看器中移除指定 [id] 的项目。
+  void removeItemById(String id) {
+    _removeItemCallback?.call(id);
+  }
+
+  /// 更新查看器中现有的项目。
+  void updateItem(ViewerItem item) {
+    _updateItemCallback?.call(item);
   }
 
   /// @nodoc

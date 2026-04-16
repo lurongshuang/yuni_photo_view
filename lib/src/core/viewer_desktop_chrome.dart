@@ -36,7 +36,11 @@ class ViewerDesktopChromeContext {
     required this.barsVisible,
     required this.isZoomed,
     required this.dismissProgress,
+    required this.items,
   });
+
+  /// 完整的媒体列表。
+  final List<ViewerItem> items;
 
   /// 媒体条数。
   final int itemCount;

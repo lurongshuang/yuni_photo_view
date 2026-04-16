@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
 
+import '../../yuni_photo_view.dart';
 import '../core/interaction_config.dart';
 import '../core/viewer_item.dart';
 import '../core/viewer_state.dart';
@@ -61,7 +62,10 @@ class ViewerPageShell extends StatefulWidget {
     this.onDismissEnd,
     this.onContentTap,
     this.screenHeight,
+    this.controller,
   });
+
+  final MediaViewerController? controller;
 
   final int index;
   final int itemCount;
@@ -302,8 +306,10 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       config: _cfg,
       pageController: widget.pageController,
       barsVisible: widget.barsVisible,
+      barsVisibleListenable: widget.controller?.barsVisibleNotifier,
       dismissProgress: widget.dismissProgress,
       mediaCardClipRadiusListenable: _mediaCardClipNotifier,
+      controller: widget.controller,
     );
 
     // ── 缓存策略 ──

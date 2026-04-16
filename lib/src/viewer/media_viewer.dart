@@ -430,7 +430,9 @@ class _MediaViewerState extends State<MediaViewer>
     widget.controller?.updateIndex(index);
     widget.controller?.updateInfoState(_currentInfoCtrl.state);
     widget.onPageChanged?.call(index);
-    setState(() {}); // 刷新顶底栏上下文
+
+    // 同步到上下文：controller 传入
+    setState(() {});
   }
 
   Future<void> _triggerLoadMore() async {
@@ -457,7 +459,6 @@ class _MediaViewerState extends State<MediaViewer>
       _internalItems.addAll(newItems);
     });
   }
-
   void _attachControllerCallbacks() {
     widget.controller?.attachCallbacks(
       jumpToPage: _jumpToPage,
@@ -468,6 +469,8 @@ class _MediaViewerState extends State<MediaViewer>
       zoomContentOut: _requestZoomOutOnCurrentPage,
       resetContentZoom: _requestZoomResetOnCurrentPage,
       appendItems: _appendItemsFromController,
+      removeItem: _removeItemByIdFromController,
+      updateItem: _updateItemFromController,
     );
   }
 
@@ -478,6 +481,45 @@ class _MediaViewerState extends State<MediaViewer>
       duration: const Duration(milliseconds: 350),
       curve: Curves.easeInOutCubic,
     );
+  }
+
+  void _removeItemByIdFromController(String id) {
+    final targetIdx = _internalItems.indexWhere((it) => it.id == id);
+    if (targetIdx == -1) return;
+
+    // 如果删完后列表空了，直接关闭
+    if (_internalItems.length == 1) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    setState(() {
+      _internalItems.removeAt(targetIdx);
+
+      // 计算更稳健的新索引
+      int newIndex = _currentIndex;
+      if (targetIdx < _currentIndex) {
+        // 删掉的是前面的，索引减一
+        newIndex = _currentIndex - 1;
+      } else if (targetIdx == _currentIndex) {
+        // 删掉的是当前的，如果已至列表末尾则前移，否则原地不动（后面的顶上来）
+        newIndex = _currentIndex.clamp(0, _internalItems.length - 1);
+      }
+      _currentIndex = newIndex;
+
+      // 清理懒加载控制器的映射，触发对应关系的重新建立（因为列表结构已变）
+      _infoControllers.clear();
+      _pageControllers.clear();
+    });
+  }
+
+  void _updateItemFromController(ViewerItem newItem) {
+    final idx = _internalItems.indexWhere((it) => it.id == newItem.id);
+    if (idx != -1) {
+      setState(() {
+        _internalItems[idx] = newItem;
+      });
+    }
   }
 
   void _showCurrentInfo() => _currentInfoCtrl.show();
@@ -553,6 +595,7 @@ class _MediaViewerState extends State<MediaViewer>
       barsVisible: _barsVisible,
       isZoomed: pc.isZoomed,
       dismissProgress: dismissProgress,
+      items: _internalItems,
     );
   }
 
@@ -633,12 +676,16 @@ class _MediaViewerState extends State<MediaViewer>
         infoRevealProgress: _currentInfoCtrl.revealProgress,
         isZoomed: _pageCtrlAt(_currentIndex).isZoomed,
         usesDesktopUi: widget.config.usesDesktopUi,
+        controller: widget.controller,
       );
 
   // ── build ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    if (_internalItems.isEmpty) {
+      return const SizedBox.shrink();
+    }
     debugPrint('[ViewerLog] MediaViewer.build called');
     final screenH = MediaQuery.of(context).size.height;
     final shellCfg = widget.config.resolveForShell();
@@ -688,6 +735,7 @@ class _MediaViewerState extends State<MediaViewer>
                       onDismissUpdate: _onDismissUpdate,
                       onDismissEnd: _onDismissEnd,
                       onContentTap: _cfg.enableTapToToggleBars ? _toggleBars : null,
+                      controller: widget.controller,
                     ),
                   ),
                 );

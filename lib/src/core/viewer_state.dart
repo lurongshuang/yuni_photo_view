@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
 
+import '../../yuni_photo_view.dart';
 import 'interaction_config.dart';
 import 'viewer_item.dart';
 
@@ -33,9 +34,23 @@ class ViewerPageContext {
     required this.barsVisible,
     required this.dismissProgress,
     this.infoRevealProgressListenable,
+    this.barsVisibleListenable,
     this.mediaCardClipRadiusListenable,
     this.extra,
+    this.controller,
   });
+
+  /// [MediaViewer] 的通用控制器。
+  final MediaViewerController? controller;
+
+  /// 展开信息面板。
+  void showInfo() => controller?.showInfo();
+
+  /// 收起信息面板。
+  void hideInfo() => controller?.hideInfo();
+
+  /// 切换信息面板。
+  void toggleInfo() => controller?.toggleInfo();
 
   /// 对应 [ViewerItem.extra] 的直传引用。
   final dynamic extra;
@@ -75,9 +90,10 @@ class ViewerPageContext {
   final double dismissProgress;
 
   /// 主内容卡片圆角半径（动画中）；未启用卡片模式时为 null。
-  ///
-  /// 自定义 [pageBuilder] 可 [ListenableBuilder] 监听后与系统相册圆角一致。
   final ValueListenable<double>? mediaCardClipRadiusListenable;
+
+  /// 全局顶栏、底栏是否显示的监听器。
+  final ValueListenable<bool>? barsVisibleListenable;
 
   /// 信息面板连续进度的监听器。
   ///
@@ -97,7 +113,9 @@ class ViewerPageContext {
     double? dismissProgress,
     ValueListenable<double>? mediaCardClipRadiusListenable,
     ValueListenable<double>? infoRevealProgressListenable,
+    ValueListenable<bool>? barsVisibleListenable,
     dynamic extra,
+    MediaViewerController? controller,
   }) {
     return ViewerPageContext(
       index: index ?? this.index,
@@ -114,7 +132,10 @@ class ViewerPageContext {
           mediaCardClipRadiusListenable ?? this.mediaCardClipRadiusListenable,
       infoRevealProgressListenable:
           infoRevealProgressListenable ?? this.infoRevealProgressListenable,
+      barsVisibleListenable:
+          barsVisibleListenable ?? this.barsVisibleListenable,
       extra: extra ?? this.extra,
+      controller: controller ?? this.controller,
     );
   }
 }
@@ -137,7 +158,20 @@ class ViewerBarContext {
     required this.isZoomed,
     this.usesDesktopUi = false,
     this.extra,
+    this.controller,
   });
+
+  /// [MediaViewer] 的通用控制器。
+  final MediaViewerController? controller;
+
+  /// 展开信息面板。
+  void showInfo() => controller?.showInfo();
+
+  /// 收起信息面板。
+  void hideInfo() => controller?.hideInfo();
+
+  /// 切换信息面板。
+  void toggleInfo() => controller?.toggleInfo();
 
   /// 对应 [ViewerItem.extra] 的直传引用。
   final dynamic extra;
