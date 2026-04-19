@@ -136,6 +136,10 @@ class ViewerTheme {
     double? mediaCardBorderRadius,
     Duration? mediaCardAnimationDuration,
     Curve? mediaCardAnimationCurve,
+    Duration? barsToggleDuration,
+    Curve? barsToggleCurve,
+    Duration? zoomDuration,
+    Curve? zoomCurve,
   }) {
     return ViewerTheme(
       backgroundColor: backgroundColor ?? this.backgroundColor,

@@ -116,12 +116,36 @@ class _ComprehensiveViewerShellState extends State<_ComprehensiveViewerShell> {
   final Set<String> _originalReady = {};
   final Set<String> _originalDownloading = {};
 
+  // 每个 item 的图片 URL 通知器，用于在不重建 _cachedMedia 的情况下更新 URL。
+  // 原图切换时只更新 notifier 的值，Image.network 通过 ValueListenableBuilder 响应。
+  final Map<String, ValueNotifier<String>> _imageUrlNotifiers = {};
+
+  ValueNotifier<String> _urlNotifierFor(ViewerItem item) {
+    return _imageUrlNotifiers.putIfAbsent(
+      item.id,
+      () => ValueNotifier<String>(_displayImageUrl(item)),
+    );
+  }
+
   @override
   void dispose() {
+    for (final n in _imageUrlNotifiers.values) {
+      n.dispose();
+    }
     _videoCtrl?.removeListener(_onVideoTick);
     _videoCtrl?.dispose();
     _viewerController.dispose();
     super.dispose();
+  }
+
+  // 更新 item 的 extra 字段，触发框架层 _cachedMedia 重建（用于视频切换等 widget 类型变化）。
+  void _updateItemExtra(String itemId) {
+    final idx = _items.indexWhere((e) => e.id == itemId);
+    if (idx < 0) return;
+    final item = _items[idx];
+    if (item is! DefaultViewerItem) return;
+    final newExtra = {'playing': _playingItemId == itemId};
+    _viewerController.updateItem(item.copyWith(extra: newExtra));
   }
 
   bool _isLivePhoto(ViewerItem item) => item.meta?['livePhoto'] == true;
@@ -146,6 +170,10 @@ class _ComprehensiveViewerShellState extends State<_ComprehensiveViewerShell> {
       _playingItemId = itemId;
       _videoCtrl = c;
     });
+    // 在下一帧更新 item.extra，触发框架层重建（不能在 setState 里嵌套调用）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _updateItemExtra(itemId);
+    });
     try {
       await c.initialize();
       c.addListener(_onVideoTick);
@@ -158,7 +186,8 @@ class _ComprehensiveViewerShellState extends State<_ComprehensiveViewerShell> {
         );
       }
     }
-    if (mounted) setState(() {});
+    // 视频初始化完成后，再次更新 extra，让 VideoPlayer 以正确尺寸重新布局。
+    if (mounted) _updateItemExtra(itemId);
   }
 
   void _onVideoTick() {
@@ -173,10 +202,14 @@ class _ComprehensiveViewerShellState extends State<_ComprehensiveViewerShell> {
 
   Future<void> _stopLivePlayback() async {
     _videoCtrl?.removeListener(_onVideoTick);
+    final stoppedId = _playingItemId;
     await _videoCtrl?.dispose();
     _videoCtrl = null;
     _playingItemId = null;
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      if (stoppedId != null) _updateItemExtra(stoppedId);
+    }
   }
 
   Future<void> _mockDownloadOriginal(String itemId) async {
@@ -191,6 +224,12 @@ class _ComprehensiveViewerShellState extends State<_ComprehensiveViewerShell> {
       _originalDownloading.remove(itemId);
       _originalReady.add(itemId);
     });
+    // 原图切换：只更新 URL notifier，不重建 _cachedMedia，避免 Image 闪烁。
+    final idx = _items.indexWhere((e) => e.id == itemId);
+    if (idx >= 0) {
+      final newUrl = _displayImageUrl(_items[idx]);
+      _imageUrlNotifiers[itemId]?.value = newUrl;
+    }
   }
 
   @override
@@ -229,8 +268,11 @@ class _ComprehensiveViewerShellState extends State<_ComprehensiveViewerShell> {
                   ),
                 );
               }
+              // 视频用 layoutChildToViewport: true，让视频铺满视口，
+              // 避免 canvas.scale 与 VideoPlayer Surface 不兼容的问题。
               return ViewerMediaCoverFrame(
                 revealProgress: pageCtx.infoRevealProgress,
+                layoutChildToViewport: true,
                 child: Center(
                   child: AspectRatio(
                     aspectRatio:
@@ -249,13 +291,16 @@ class _ComprehensiveViewerShellState extends State<_ComprehensiveViewerShell> {
                 onLongPress: _isLivePhoto(item) && motion != null
                     ? () => _startLivePlayback(item.id, motion)
                     : null,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, __, ___) => const Center(
-                    child: Icon(Icons.broken_image,
-                        color: Colors.white54, size: 64),
+                child: ValueListenableBuilder<String>(
+                  valueListenable: _urlNotifierFor(item),
+                  builder: (_, url, __) => Image.network(
+                    url,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, __, ___) => const Center(
+                      child: Icon(Icons.broken_image,
+                          color: Colors.white54, size: 64),
+                    ),
                   ),
                 ),
               ),

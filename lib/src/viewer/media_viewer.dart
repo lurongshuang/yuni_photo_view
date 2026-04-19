@@ -291,6 +291,8 @@ class _MediaViewerState extends State<MediaViewer>
 
   // 顶底栏显隐（单击内容切换）
   bool _barsVisible = true;
+  // 内部 notifier，供 ViewerPageShell 监听 barsVisible 变化，不依赖外部 controller
+  late final ValueNotifier<bool> _internalBarsVisibleNotifier;
 
   // 镜像同步状态中心
   InfoState _mirroredInfoState = InfoState.hidden;
@@ -306,6 +308,7 @@ class _MediaViewerState extends State<MediaViewer>
   @override
   void initState() {
     super.initState();
+    _internalBarsVisibleNotifier = ValueNotifier<bool>(_barsVisible);
     _internalItems = List.from(widget.items);
     _hasMore = widget.initialHasMore;
     _currentIndex = widget.initialIndex.clamp(0, _itemCount - 1);
@@ -350,6 +353,7 @@ class _MediaViewerState extends State<MediaViewer>
     _dismissOffset.dispose();
     _dismissSnapController.dispose();
     _pageController.dispose();
+    _internalBarsVisibleNotifier.dispose();
     super.dispose();
   }
 
@@ -638,6 +642,7 @@ class _MediaViewerState extends State<MediaViewer>
 
   void _toggleBars() {
     setState(() => _barsVisible = !_barsVisible);
+    _internalBarsVisibleNotifier.value = _barsVisible;
     widget.controller?.updateBarsVisible(_barsVisible);
     widget.onBarsVisibilityChanged?.call(_barsVisible);
     _applySystemUi(_barsVisible);
@@ -647,6 +652,7 @@ class _MediaViewerState extends State<MediaViewer>
   void _setBarsVisibleFromController(bool visible) {
     if (_barsVisible == visible) return;
     setState(() => _barsVisible = visible);
+    _internalBarsVisibleNotifier.value = visible;
     widget.onBarsVisibilityChanged?.call(_barsVisible);
     _applySystemUi(_barsVisible);
   }
@@ -686,7 +692,7 @@ class _MediaViewerState extends State<MediaViewer>
     if (_internalItems.isEmpty) {
       return const SizedBox.shrink();
     }
-    debugPrint('[ViewerLog] MediaViewer.build called');
+
     final screenH = MediaQuery.of(context).size.height;
     final shellCfg = widget.config.resolveForShell();
 
@@ -703,7 +709,6 @@ class _MediaViewerState extends State<MediaViewer>
             child: ListenableBuilder(
               listenable: _pageCtrlAt(_currentIndex),
               builder: (ctx, _) {
-                debugPrint('[ViewerLog] MediaViewer PageView layer rebuild (dismiss: $progress, zoom: ${_pageCtrlAt(_currentIndex).isZoomed})');
                 return PhotoViewGestureDetectorScope(
                   axis: Axis.horizontal,
                   child: PageView.builder(
@@ -730,6 +735,7 @@ class _MediaViewerState extends State<MediaViewer>
                       backgroundBuilder: widget.backgroundBuilder,
                       underMediaBuilder: widget.underMediaBuilder,
                       barsVisible: _barsVisible,
+                      barsVisibleNotifier: _internalBarsVisibleNotifier,
                       dismissProgress: progress,
                       screenHeight: screenH,
                       onDismissUpdate: _onDismissUpdate,

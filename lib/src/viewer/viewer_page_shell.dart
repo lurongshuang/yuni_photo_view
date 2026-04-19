@@ -2,7 +2,6 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:photo_view/photo_view.dart';
 
 import '../../yuni_photo_view.dart';
 import '../core/interaction_config.dart';
@@ -10,7 +9,10 @@ import '../core/viewer_item.dart';
 import '../core/viewer_state.dart';
 import '../core/viewer_theme.dart';
 import '../info_sheet/info_sheet_controller.dart';
+import '../widgets/viewer_media_cover_frame.dart' show InfoRevealScope;
 import 'media_card_chrome_scope.dart';
+import 'photo_view_zoom_engine.dart';
+import 'zoom_engine.dart';
 
 // ── 竖向手势模式 ────────────────────────────────────────────────────────────
 
@@ -30,6 +32,9 @@ enum _GestureMode {
   /// 不处理（如已放大），交给子级手势。
   consumed,
 }
+
+// ── 信息面板进度注入 ─────────────────────────────────────────────────────────
+// InfoRevealScope 定义在 viewer_media_cover_frame.dart，此处通过 import 使用。
 
 // ── 下拉关闭回调类型 ─────────────────────────────────────────────────────────
 
@@ -55,6 +60,7 @@ class ViewerPageShell extends StatefulWidget {
     this.backgroundBuilder,
     this.underMediaBuilder,
     required this.barsVisible,
+    this.barsVisibleNotifier,
     required this.dismissProgress,
     this.infoBuilder,
     this.pageOverlayBuilder,
@@ -96,6 +102,9 @@ class ViewerPageShell extends StatefulWidget {
   /// 全局顶底栏是否显示。
   final bool barsVisible;
 
+  /// 顶底栏显隐状态的监听器，用于 _AnimatedMediaCardChrome 实时响应栏状态变化。
+  final ValueListenable<bool>? barsVisibleNotifier;
+
   /// 下拉关闭进度（0.0～1.0）。
   final double dismissProgress;
 
@@ -110,13 +119,19 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   /// 卡片圆角半径；与 [_AnimatedMediaCardChrome] 动画同步，供 [MediaCardChromeScope] / [ViewerPageContext] 使用。
   ValueNotifier<double>? _mediaCardClipNotifier;
 
+  /// _AnimatedMediaCardChrome 的 GlobalKey，防止 _buildLayout 重新执行时 State 被销毁重建，
+  /// 确保 immersed 变化时 didUpdateWidget 能正确触发动画。
+  final GlobalKey _mediaCardChromeKey = GlobalKey();
+
   // 便于壳层在需要时对缩放包装调用 reset（例如翻页复用）。
   final GlobalKey<_ZoomableMediaWrapperState> _zoomKey = GlobalKey();
 
   /// 缓存主媒体组件，避免在信息面板滑动动画中频繁调用 pageBuilder 导致状态丢失（如视频播放中断）。
   Widget? _cachedMedia;
   ViewerItem? _lastItem;
-  ViewerPageBuilder? _lastBuilder;
+  dynamic _lastItemExtra;
+  bool _lastBarsVisible = true;
+  double _lastDismissProgress = 0.0;
 
   /// 用于保护媒体组件状态的 GlobalKey，确保在从 PhotoView 移出时不会被重置（针对视频等有力）。
   final GlobalKey _mediaGlobalKey = GlobalKey();
@@ -124,9 +139,18 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   /// 用于向子组件局部透传信息面板进度，不触发整树重建。
   late final ValueNotifier<double> _infoRevealProgressNotifier;
 
-  // ── 辅助 ───────────────────────────────────────────────────────────────
+  // ── 缓存失效判定 ────────────────────────────────────────────────────────
+
+  bool get _needsRebuildCache =>
+      _cachedMedia == null ||
+      _lastItem != widget.item ||
+      _lastItemExtra != widget.item.extra ||
+      _lastBarsVisible != widget.barsVisible ||
+      (_lastDismissProgress - widget.dismissProgress).abs() >
+          0.001; // ── 辅助 ───────────────────────────────────────────────────────────────
 
   InfoSheetController get _info => widget.infoController;
+
   ViewerInteractionConfig get _cfg => widget.config;
 
   bool get _hasInfo => widget.item.hasInfo && widget.infoBuilder != null;
@@ -262,7 +286,6 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('[ViewerLog] ViewerPageShell.build for index ${widget.index}');
     final screenH = _resolveScreenHeight(context);
 
     // 先写入高度，便于程序调用 show() 时未到首次拖动也能算对默认高度。
@@ -271,7 +294,6 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
     return ListenableBuilder(
       listenable: widget.pageController,
       builder: (ctx, _) {
-        debugPrint('[ViewerLog] ViewerPageShell outer ListenableBuilder rebuild');
         final isZoomed = widget.pageController.isZoomed;
         // 放大时不注册竖拖，把单指平移交给 PhotoView；单击切栏放在 PhotoView 的 onTapUp，避免与外层 GestureDetector 抢竞技场。
         return GestureDetector(
@@ -289,7 +311,7 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   Widget _buildLayout(BuildContext ctx, double screenH) {
     // 注意：ListenableBuilder 不再包裹整个布局，
     // 我们手动在需要的地方通过 ListenableBuilder 或 ValueListenableBuilder 局部刷新。
-    
+
     final revealProgress = _info.revealProgress;
     final sheetH = _info.sheetHeight;
     final contentH = (screenH - sheetH).clamp(0.0, screenH);
@@ -314,16 +336,15 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
 
     // ── 缓存策略 ──
     // 只有当项或 Builder 变化时才重新调用。滑动 revealProgress 时不重新生成 widget 实例。
-    if (_cachedMedia == null ||
-        _lastItem != widget.item ||
-        _lastBuilder != widget.pageBuilder) {
-      debugPrint('[ViewerLog] Calling pageBuilder to refresh _cachedMedia');
+    if (_needsRebuildCache) {
       _cachedMedia = KeyedSubtree(
         key: _mediaGlobalKey,
         child: widget.pageBuilder(ctx, pageCtx),
       );
       _lastItem = widget.item;
-      _lastBuilder = widget.pageBuilder;
+      _lastItemExtra = widget.item.extra;
+      _lastBarsVisible = widget.barsVisible;
+      _lastDismissProgress = widget.dismissProgress;
     }
 
     final pageOverlay = widget.pageOverlayBuilder?.call(ctx, pageCtx);
@@ -343,12 +364,25 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
     final theme = widget.theme;
     Widget mediaZoom = zoomCore;
     if (_mediaCardChromeEnabled(theme)) {
+      // 同时监听 pageController（isZoomed 变化）和 barsVisibleNotifier（栏显隐变化）
+      // 两者都会影响 immersed 状态，从而触发圆角动画。
+      // 优先使用框架内部的 barsVisibleNotifier（始终存在），
+      // 其次使用外部 controller 的 notifier。
+      final barsNotifier =
+          widget.barsVisibleNotifier ?? widget.controller?.barsVisibleNotifier;
+      final cardListenable = barsNotifier != null
+          ? Listenable.merge([widget.pageController, barsNotifier])
+          : widget.pageController;
       mediaZoom = ListenableBuilder(
-        listenable: widget.pageController,
+        listenable: cardListenable,
         builder: (context, _) {
-          final immersed =
-              !widget.barsVisible || widget.pageController.isZoomed;
+          // 优先从 barsVisibleNotifier 读取最新值（notifier 触发时 widget.barsVisible 可能还未更新）
+          final barsVisible = barsNotifier?.value ?? widget.barsVisible;
+          final immersed = !barsVisible || widget.pageController.isZoomed;
+          debugPrint(
+              '[CardChrome] ListenableBuilder rebuild: barsVisible=$barsVisible isZoomed=${widget.pageController.isZoomed} immersed=$immersed');
           return _AnimatedMediaCardChrome(
+            key: _mediaCardChromeKey,
             immersed: immersed,
             inset: theme.mediaCardInset,
             borderRadius: theme.mediaCardBorderRadius,
@@ -361,77 +395,79 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       );
     }
 
-    return ListenableBuilder(
-      listenable: _info,
-      child: mediaZoom,
-      builder: (ctx, stableMedia) {
-        debugPrint('[ViewerLog] ViewerPageShell inner ListenableBuilder rebuild (revealProgress: ${_info.revealProgress})');
-        final revealProgress = _info.revealProgress;
-        final sheetH = _info.sheetHeight;
-        final contentH = (screenH - sheetH).clamp(0.0, screenH);
-        
-        // 重新构建一个局部的上下文，仅刷新非缓存的部分
-        final animationCtx = pageCtx.copyWith(
-          infoRevealProgress: revealProgress,
-          availableSize: Size(screenW, contentH),
-          infoState: _info.state,
-        );
+    return InfoRevealScope(
+      listenable: _infoRevealProgressNotifier,
+      child: ListenableBuilder(
+        listenable: _info,
+        child: mediaZoom,
+        builder: (ctx, stableMedia) {
+          final revealProgress = _info.revealProgress;
+          final sheetH = _info.sheetHeight;
+          final contentH = (screenH - sheetH).clamp(0.0, screenH);
 
-        return Stack(
-          children: [
-            if (widget.backgroundBuilder != null)
-              Positioned.fill(
-                child: widget.backgroundBuilder!(ctx, animationCtx),
-              ),
+          // 重新构建一个局部的上下文，仅刷新非缓存的部分
+          final animationCtx = pageCtx.copyWith(
+            infoRevealProgress: revealProgress,
+            availableSize: Size(screenW, contentH),
+            infoState: _info.state,
+          );
 
-            if (underMedia != null)
+          return Stack(
+            children: [
+              if (widget.backgroundBuilder != null)
+                Positioned.fill(
+                  child: widget.backgroundBuilder!(ctx, animationCtx),
+                ),
+
+              if (underMedia != null)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: contentH,
+                  child: underMedia,
+                ),
+
+              // 主内容视口：高度随信息面板上移变矮；内容顶对齐，底部由 ClipRect 裁切。
               Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
                 height: contentH,
-                child: underMedia,
-              ),
-
-            // 主内容视口：高度随信息面板上移变矮；内容顶对齐，底部由 ClipRect 裁切。
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: contentH,
-              child: _MediaViewportWrapper(
-                revealProgress: revealProgress,
-                child: stableMedia!,
-              ),
-            ),
-
-            if (pageOverlay != null)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                height: contentH,
-                child: pageOverlay,
-              ),
-
-            if (_hasInfo && sheetH > 0)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                height: sheetH,
-                child: Opacity(
-                  opacity: _info.contentOpacity,
-                  child: _InfoSheetSurface(
-                    theme: widget.theme,
-                    infoController: _info,
-                    child: widget.infoBuilder!(ctx, animationCtx),
-                  ),
+                child: _MediaViewportWrapper(
+                  revealProgress: revealProgress,
+                  child: stableMedia!,
                 ),
               ),
-          ],
-        );
-      },
+
+              if (pageOverlay != null)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: contentH,
+                  child: pageOverlay,
+                ),
+
+              if (_hasInfo && sheetH > 0)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: sheetH + 10,
+                  child: Opacity(
+                    opacity: 1,
+                    child: _InfoSheetSurface(
+                      theme: widget.theme,
+                      infoController: _info,
+                      child: widget.infoBuilder!(ctx, animationCtx),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -449,6 +485,7 @@ bool _mediaCardChromeEnabled(ViewerTheme theme) {
 
 class _AnimatedMediaCardChrome extends StatefulWidget {
   const _AnimatedMediaCardChrome({
+    super.key,
     required this.immersed,
     required this.inset,
     required this.borderRadius,
@@ -489,6 +526,8 @@ class _AnimatedMediaCardChromeState extends State<_AnimatedMediaCardChrome>
     _curveAnim.addListener(_syncClipRadius);
     _controller.value = widget.immersed ? 1.0 : 0.0;
     _syncClipRadius();
+    debugPrint(
+        '[CardChrome] initState immersed=${widget.immersed} controller.value=${_controller.value}');
   }
 
   void _syncClipRadius() {
@@ -505,6 +544,8 @@ class _AnimatedMediaCardChromeState extends State<_AnimatedMediaCardChrome>
       _controller.duration = widget.duration;
     }
     if (oldWidget.immersed != widget.immersed) {
+      debugPrint(
+          '[CardChrome] didUpdateWidget immersed: ${oldWidget.immersed} → ${widget.immersed}');
       if (widget.immersed) {
         _controller.forward();
       } else {
@@ -546,11 +587,10 @@ class _AnimatedMediaCardChromeState extends State<_AnimatedMediaCardChrome>
 
 // ── 主内容视口对齐插值 ───────────────────────────────────────────────────────
 
-/// 随 [revealProgress] 在「垂直居中」与「顶对齐」之间插值；底部溢出裁掉，不盖住信息面板。
+/// 主内容视口包装器；底部溢出裁掉，不盖住信息面板。
 ///
-/// - `0`：全屏看时内容居中。
-/// - 趋向 `1`：媒体顶边贴视口顶，便于与上拉面板衔接。
-/// - 大于 `1`：保持顶对齐。
+/// [RenderCoverFrame] 自身已通过 `_computeGeometry` 处理垂直对齐插值，
+/// 此处只需固定顶对齐并裁切底部溢出，不再做动态 Align 偏移。
 class _MediaViewportWrapper extends StatelessWidget {
   const _MediaViewportWrapper({
     required this.child,
@@ -559,16 +599,14 @@ class _MediaViewportWrapper extends StatelessWidget {
 
   final Widget child;
 
-  /// 0 = 信息隐藏（居中），1 及以上 = 信息展开（顶对齐）。
+  /// 0 = 信息隐藏，1 及以上 = 信息展开。（保留参数以兼容调用方，此处不再使用。）
   final double revealProgress;
 
   @override
   Widget build(BuildContext context) {
-    // Alignment.center 的 y 为 0，topCenter 为 -1；在 0～1 间插值。
-    final alignY = -(revealProgress.clamp(0.0, 1.0));
     return ClipRect(
       child: Align(
-        alignment: Alignment(0, alignY),
+        alignment: Alignment.topCenter,
         child: child,
       ),
     );
@@ -577,10 +615,12 @@ class _MediaViewportWrapper extends StatelessWidget {
 
 // ── PhotoView 缩放包装 ───────────────────────────────────────────────────────
 
-/// 用 [PhotoView.customChild] 包一层业务子组件：双指缩放、双击放大/还原、边界内平移。
+/// 用 [ZoomEngine] 包一层业务子组件：双指缩放、双击放大/还原、边界内平移。
 ///
 /// 与 [MediaViewer] 外层的 [PhotoViewGestureDetectorScope] 配合，避免横滑翻页与双指缩放抢手势。
 /// 缩放状态写入 [ViewerPageController]，供壳层关闭竖拖、禁止 PageView 滑动。
+///
+/// 默认使用 [PhotoViewZoomEngine]；可通过 [zoomEngineFactory] 注入自定义引擎（测试或未来替换用）。
 class _ZoomableMediaWrapper extends StatefulWidget {
   const _ZoomableMediaWrapper({
     super.key,
@@ -591,6 +631,7 @@ class _ZoomableMediaWrapper extends StatefulWidget {
     required this.pageController,
     required this.theme,
     this.onSingleTap,
+    this.zoomEngineFactory,
   });
 
   final Widget child;
@@ -600,8 +641,12 @@ class _ZoomableMediaWrapper extends StatefulWidget {
   final ViewerPageController pageController;
   final ViewerTheme theme;
 
-  /// PhotoView 在确认「非双击」后的单击回调，用于切换顶底栏。
+  /// 确认「非双击」后的单击回调，用于切换顶底栏。
   final VoidCallback? onSingleTap;
+
+  /// 可选：注入自定义 [ZoomEngine] 工厂（测试或未来替换引擎用）。
+  /// 为 null 时默认使用 [PhotoViewZoomEngine]。
+  final ZoomEngine Function(TickerProvider vsync)? zoomEngineFactory;
 
   @override
   State<_ZoomableMediaWrapper> createState() => _ZoomableMediaWrapperState();
@@ -609,175 +654,50 @@ class _ZoomableMediaWrapper extends StatefulWidget {
 
 class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
     with SingleTickerProviderStateMixin {
-  late final PhotoViewController _photoCtrl;
-  late final PhotoViewScaleStateController _scaleStateCtrl;
-  late final AnimationController _animCtrl;
-
-  /// 与 PhotoView 可视区域一致，用于取视口中心的全局坐标（与 controller.position 同坐标系）。
-  final GlobalKey _photoViewportKey = GlobalKey();
-
-  Animation<double>? _scaleAnim;
-  Animation<Offset>? _positionAnim;
-
-  Offset _lastGlobalTapPosition = Offset.zero;
-
-  static const double _kMinScale = 1.0;
-  static const double _kMaxScale = 5.0;
-  static const double _kDoubleTapScale = 2.5;
+  late final ZoomEngine _engine;
 
   @override
   void initState() {
     super.initState();
-    _photoCtrl = PhotoViewController()
-      ..outputStateStream.listen(_onPhotoViewState);
-    _scaleStateCtrl = PhotoViewScaleStateController();
-    _animCtrl = AnimationController(
-      vsync: this,
-      duration: widget.theme.zoomDuration,
-    )..addListener(_onAnimTick);
-    widget.pageController.addListener(_onPageCtrlForProgrammaticZoom);
-  }
 
-  @override
-  void didUpdateWidget(_ZoomableMediaWrapper old) {
-    super.didUpdateWidget(old);
-    // 注意：enabled 现在在内部由 ValueListenableBuilder 处理，
-    // 这里不再需要根据 widget.enabled 来立即重置缩放，
-    // 因为进度变化会自动触发重跑 build 并由 ValueListenableBuilder 处理逻辑。
+    // 7.2: 若外部注入了工厂则使用注入的引擎，否则创建默认的 PhotoViewZoomEngine
+    if (widget.zoomEngineFactory != null) {
+      _engine = widget.zoomEngineFactory!(this);
+    } else {
+      _engine = PhotoViewZoomEngine(
+        vsync: this,
+        theme: widget.theme,
+        enableZoom: widget.enableZoom,
+        enableDoubleTap: widget.enableDoubleTap,
+      );
+    }
+
+    // 7.2: 连接引擎回调
+    _engine.onSingleTap = widget.onSingleTap;
+    _engine.onScaleChanged = (s) => widget.pageController.reportContentScale(s);
+
+    // 7.2: 监听程序化缩放请求
+    widget.pageController.addListener(_onPageCtrlForProgrammaticZoom);
   }
 
   @override
   void dispose() {
     widget.pageController.removeListener(_onPageCtrlForProgrammaticZoom);
-    _animCtrl.removeListener(_onAnimTick);
-    _photoCtrl.dispose();
-    _scaleStateCtrl.dispose();
-    _animCtrl.dispose();
+    _engine.dispose();
     super.dispose();
   }
 
-  // ── 辅助 ───────────────────────────────────────────────────────────────
-
-  bool get _isZoomed => (_photoCtrl.scale ?? _kMinScale) > 1.02;
+  // ── 程序化缩放 ─────────────────────────────────────────────────────────
 
   void _onPageCtrlForProgrammaticZoom() {
     final kind = widget.pageController.takeProgrammaticZoom();
     if (kind == null) return;
-    
-    // 只有在面板未展开时才响应缩放请求
+
+    // 只有在面板未展开且缩放已启用时才响应缩放请求
     final revealProgress = widget.revealProgressListenable.value;
     if (!widget.enableZoom || revealProgress >= 0.05) return;
-    
-    switch (kind) {
-      case ViewerProgrammaticZoomKind.zoomIn:
-        _applyStepScale(1.2);
-      case ViewerProgrammaticZoomKind.zoomOut:
-        _applyStepScale(1 / 1.2);
-      case ViewerProgrammaticZoomKind.reset:
-        _programmaticResetScale();
-    }
-  }
 
-  void _applyStepScale(double factor) {
-    _animCtrl.stop();
-    final cur = _photoCtrl.scale ?? _kMinScale;
-    final next = (cur * factor).clamp(_kMinScale, _kMaxScale);
-    if ((next - cur).abs() < 0.002) return;
-    final pos = _photoCtrl.position;
-    final ratio = next / cur;
-
-    // PhotoView 内部 position (pos) 实际上就是相对于视口中心的偏移矢量。
-    // 要实现基于中心的不动点缩放，逻辑上 V = Offset.zero。
-    // 应用公式 P2 = V - (V - P1) * (S2 / S1) => P2 = P1 * ratio。
-    final newPos = pos * ratio;
-
-    _photoCtrl.updateMultiple(scale: next, position: newPos);
-    _scaleStateCtrl.scaleState = next > _kMinScale + 0.02
-        ? PhotoViewScaleState.zoomedIn
-        : PhotoViewScaleState.initial;
-  }
-
-  void _programmaticResetScale() {
-    _animCtrl.stop();
-    _photoCtrl.updateMultiple(scale: _kMinScale, position: Offset.zero);
-    _scaleStateCtrl.scaleState = PhotoViewScaleState.initial;
-    widget.pageController.reportContentScale(_kMinScale);
-  }
-
-  void _onPhotoViewState(PhotoViewControllerValue value) {
-    final s = value.scale ?? _kMinScale;
-    widget.pageController.reportContentScale(s);
-  }
-
-  void _onAnimTick() {
-    if (_scaleAnim != null && _positionAnim != null) {
-      _photoCtrl.updateMultiple(
-        scale: _scaleAnim!.value,
-        position: _positionAnim!.value,
-      );
-    }
-  }
-
-  PhotoViewScaleState _handleDoubleTap(PhotoViewScaleState currentState) {
-    if (!widget.enableDoubleTap) {
-      return currentState;
-    }
-
-    _runDoubleTapAnimation();
-    return currentState;
-  }
-
-  void _runDoubleTapAnimation() {
-    _animCtrl.stop();
-    final currentScale = _photoCtrl.scale ?? _kMinScale;
-    final currentPosition = _photoCtrl.position;
-
-    final double targetScale;
-    final Offset targetPosition;
-
-    if (_isZoomed) {
-      targetScale = _kMinScale;
-      targetPosition = Offset.zero;
-    } else {
-      const s = _kDoubleTapScale;
-      targetScale = s;
-
-      final box =
-          _photoViewportKey.currentContext?.findRenderObject() as RenderBox?;
-      if (box != null && box.hasSize) {
-        // 1. 获取视口在屏幕上的绝对物理中心
-        final viewportCenterGlobal = box.localToGlobal(
-          Offset(box.size.width / 2, box.size.height / 2),
-        );
-
-        // 2. 计算点击点相对于视口中心的绝对物理矢量 (V)
-        final V = _lastGlobalTapPosition - viewportCenterGlobal;
-
-        // 3. 应用不动点平移公式：P2 = V - (V - P1) * (S2 / S1)
-        final S1 = currentScale;
-        final S2 = targetScale;
-        final P1 = currentPosition;
-
-        targetPosition = V - (V - P1) * (S2 / S1);
-      } else {
-        targetPosition = Offset.zero;
-      }
-    }
-
-    final curved = CurvedAnimation(
-      parent: _animCtrl,
-      curve: widget.theme.zoomCurve,
-    );
-    _scaleAnim =
-        Tween<double>(begin: currentScale, end: targetScale).animate(curved);
-    _positionAnim = Tween<Offset>(begin: currentPosition, end: targetPosition)
-        .animate(curved);
-
-    _scaleStateCtrl.scaleState = targetScale > _kMinScale
-        ? PhotoViewScaleState.zoomedIn
-        : PhotoViewScaleState.initial;
-
-    _animCtrl.forward(from: 0);
+    _engine.requestProgrammaticZoom(kind);
   }
 
   @override
@@ -786,49 +706,9 @@ class _ZoomableMediaWrapperState extends State<_ZoomableMediaWrapper>
       valueListenable: widget.revealProgressListenable,
       builder: (context, revealProgress, _) {
         final bool enabled = widget.enableZoom && revealProgress < 0.01;
-        debugPrint('[ViewerLog] _ZoomableMediaWrapper.build revealProgress: $revealProgress, enabled: $enabled');
 
-        // 当不应响应手势时（如信息面板即将拉起），如果当前处于放大状态，立即重置 PhotoView
-        if (!enabled && _isZoomed) {
-          _animCtrl.stop();
-          _photoCtrl.updateMultiple(scale: _kMinScale, position: Offset.zero);
-          _scaleStateCtrl.scaleState = PhotoViewScaleState.initial;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            widget.pageController.reportContentScale(_kMinScale);
-          });
-        }
-
-        return Listener(
-          onPointerDown: (event) {
-            _lastGlobalTapPosition = event.position;
-            debugPrint('[ViewerLog] PointerDown: ${event.position}');
-          },
-          child: SizedBox.expand(
-            key: _photoViewportKey,
-            child: PhotoView.customChild(
-              controller: _photoCtrl,
-              scaleStateController: _scaleStateCtrl,
-              tightMode: true,
-              minScale: _kMinScale,
-              maxScale: _kMaxScale,
-              initialScale: _kMinScale,
-              backgroundDecoration: const BoxDecoration(color: Colors.transparent),
-              gestureDetectorBehavior: HitTestBehavior.translucent,
-              disableGestures: !enabled,
-              onTapDown: (_, details, __) {
-                debugPrint('[ViewerLog] PhotoView.onTapDown');
-              },
-              onTapUp: (_, details, __) {
-                debugPrint('[ViewerLog] PhotoView.onTapUp');
-                if (enabled) {
-                  widget.onSingleTap?.call();
-                }
-              },
-              scaleStateCycle: _handleDoubleTap,
-              child: widget.child,
-            ),
-          ),
-        );
+        // 引擎的 build 方法内部处理 enabled=false 时的缩放重置逻辑
+        return _engine.build(context, child: widget.child, enabled: enabled);
       },
     );
   }
@@ -883,42 +763,41 @@ class _InfoSheetSurfaceState extends State<_InfoSheetSurface> {
           final maxH = constraints.maxHeight.clamp(0.0, double.infinity);
           // 动画初期 sheet 高度可能小于拖条设计高度 28，固定 28 会导致底部溢出。
           final handleH = maxH <= 0 ? 0.0 : (maxH < 28 ? maxH : 28.0);
-          return Container(
-            width: constraints.maxWidth,
-            height: constraints.maxHeight,
-            clipBehavior: Clip.hardEdge,
-            decoration: BoxDecoration(
+          return ClipRRect(
+            borderRadius: theme.infoBorderRadius,
+            child: Container(
+              width: constraints.maxWidth,
+              height: constraints.maxHeight,
               color: bg,
-              borderRadius: theme.infoBorderRadius,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (handleH > 0)
-                  SizedBox(
-                    height: handleH,
-                    child: Center(
-                      child: Container(
-                        width: theme.dragHandleSize.width,
-                        height: theme.dragHandleSize.height,
-                        decoration: BoxDecoration(
-                          color: handleColor,
-                          borderRadius: BorderRadius.circular(
-                              theme.dragHandleSize.height / 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (handleH > 0)
+                    SizedBox(
+                      height: handleH,
+                      child: Center(
+                        child: Container(
+                          width: theme.dragHandleSize.width,
+                          height: theme.dragHandleSize.height,
+                          decoration: BoxDecoration(
+                            color: handleColor,
+                            borderRadius: BorderRadius.circular(
+                                theme.dragHandleSize.height / 2),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    physics: const NeverScrollableScrollPhysics(),
-                    child: KeyedSubtree(
-                      key: _contentKey,
-                      child: widget.child,
+                  Expanded(
+                    child: SingleChildScrollView(
+                      physics: const NeverScrollableScrollPhysics(),
+                      child: KeyedSubtree(
+                        key: _contentKey,
+                        child: widget.child,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
