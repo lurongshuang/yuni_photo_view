@@ -7,6 +7,7 @@ import 'cases/custom_info_case.dart';
 import 'cases/damping_case.dart';
 import 'cases/desktop_custom_chrome_case.dart';
 import 'cases/full_custom_bar_case.dart';
+import 'cases/gesture_control_case.dart';
 import 'cases/hero_case.dart';
 import 'cases/hero_custom_case.dart';
 import 'cases/mirrored_info_case.dart';
@@ -120,6 +121,11 @@ class _CaseListPage extends StatelessWidget {
         title: '14. ViewerMediaCoverFrame 复杂案例',
         subtitle: '图片叠加、视频适配、全视口自定义布局（插值演示）',
         builder: (_) => const ViewerMediaCoverFrameCase(),
+      ),
+      _CaseEntry(
+        title: '15. 手势禁用案例',
+        subtitle: '',
+        builder: (_) => const GestureControlCase(),
       ),
     ];
 

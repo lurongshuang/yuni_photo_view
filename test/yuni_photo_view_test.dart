@@ -16,6 +16,34 @@ void main() {
       expect(next.hasInfo, false);
       expect(next.id, 'b');
     });
+
+    test('copyWith overrides enableGestureScaling', () {
+      const item = DefaultViewerItem(id: 'c', enableGestureScaling: true);
+      final next = item.copyWith(enableGestureScaling: false);
+      expect(next.enableGestureScaling, false);
+      expect(next.id, 'c');
+    });
+
+    test('copyWith preserves enableGestureScaling when not specified', () {
+      const item = DefaultViewerItem(id: 'd', enableGestureScaling: false);
+      final next = item.copyWith(hasInfo: false);
+      expect(next.enableGestureScaling, false);
+      expect(next.id, 'd');
+    });
+
+    test('toString includes enableGestureScaling when true', () {
+      const item = DefaultViewerItem(id: 'e', enableGestureScaling: true);
+      final str = item.toString();
+      expect(str, contains('enableGestureScaling'));
+      expect(str, contains('true'));
+    });
+
+    test('toString includes enableGestureScaling when false', () {
+      const item = DefaultViewerItem(id: 'f', enableGestureScaling: false);
+      final str = item.toString();
+      expect(str, contains('enableGestureScaling'));
+      expect(str, contains('false'));
+    });
   });
 
   group('ViewerInteractionConfig', () {

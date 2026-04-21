@@ -99,6 +99,22 @@ MediaViewer.openPaging(
 
 ## 🧩 数据模型与上下文
 
+### **ViewerItem.enableGestureScaling (手势缩放控制)**
+您可以为每个 `ViewerItem` 单独控制是否启用手势缩放功能：
+```dart
+DefaultViewerItem(
+  id: 'img_1',
+  payload: 'https://example.com/photo.jpg',
+  enableGestureScaling: false,  // 禁用双指捏合和双击缩放
+)
+```
+- **默认值**: `true` (启用手势缩放)
+- **适用场景**: 
+  - 文档预览：禁用缩放，只允许滑动翻页
+  - 视频播放：避免手势冲突
+  - 自定义交互：需要自己处理手势的场景
+- **向后兼容**: 现有代码无需修改，默认保持启用状态
+
 ### **ViewerItem.extra (业务 Payload)**
 您可以在构造 `ViewerItem` 时传入自定义业务字典：
 ```dart

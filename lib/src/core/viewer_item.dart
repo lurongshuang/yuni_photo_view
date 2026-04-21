@@ -20,6 +20,13 @@ abstract class ViewerItem {
   /// [ViewerPageContext] 和 [ViewerBarContext] 会同步透传此字段。
   dynamic get extra => null;
 
+  /// 是否启用手势缩放功能（双指捏合、双击缩放等）。
+  ///
+  /// 默认返回 `true` 以保持向后兼容性。子类可以覆盖此 getter 以提供自定义行为。
+  ///
+  /// 当返回 `false` 时，查看器系统将禁用该条目的手势缩放功能。
+  bool get enableGestureScaling => true;
+
   @override
   String toString() => 'ViewerItem(id: $id, hasInfo: $hasInfo)';
 }
@@ -33,6 +40,7 @@ class DefaultViewerItem extends ViewerItem {
     this.meta,
     this.extra,
     this.hasInfo = true,
+    this.enableGestureScaling = true,
   }) : super();
 
   @override
@@ -49,6 +57,9 @@ class DefaultViewerItem extends ViewerItem {
   @override
   final bool hasInfo;
 
+  @override
+  final bool enableGestureScaling;
+
   DefaultViewerItem copyWith({
     String? id,
     String? kind,
@@ -56,6 +67,7 @@ class DefaultViewerItem extends ViewerItem {
     Map<String, dynamic>? meta,
     dynamic extra,
     bool? hasInfo,
+    bool? enableGestureScaling,
   }) {
     return DefaultViewerItem(
       id: id ?? this.id,
@@ -64,10 +76,11 @@ class DefaultViewerItem extends ViewerItem {
       meta: meta ?? this.meta,
       extra: extra ?? this.extra,
       hasInfo: hasInfo ?? this.hasInfo,
+      enableGestureScaling: enableGestureScaling ?? this.enableGestureScaling,
     );
   }
 
   @override
   String toString() =>
-      'DefaultViewerItem(id: $id, kind: $kind, hasInfo: $hasInfo)';
+      'DefaultViewerItem(id: $id, kind: $kind, hasInfo: $hasInfo, enableGestureScaling: $enableGestureScaling)';
 }

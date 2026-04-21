@@ -353,8 +353,8 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
     final zoomCore = _ZoomableMediaWrapper(
       key: _zoomKey,
       revealProgressListenable: _infoRevealProgressNotifier,
-      enableZoom: _cfg.enableZoom,
-      enableDoubleTap: _cfg.enableDoubleTapZoom,
+      enableZoom: _cfg.enableZoom && widget.item.enableGestureScaling,
+      enableDoubleTap: _cfg.enableDoubleTapZoom && widget.item.enableGestureScaling,
       pageController: widget.pageController,
       theme: widget.theme,
       onSingleTap: _cfg.enableTapToToggleBars ? widget.onContentTap : null,

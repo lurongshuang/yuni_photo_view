@@ -63,7 +63,8 @@ export 'src/core/viewer_state.dart'
         ViewerInfoBuilder,
         ViewerBarBuilder,
         ViewerOverlayBuilder,
-        ViewerPageOverlayBuilder;
+        ViewerPageOverlayBuilder,
+        ViewerBackgroundBuilder;
 
 // ── 外部控制器 ───────────────────────────────────────────────────────────────
 export 'src/core/viewer_controller.dart' show MediaViewerController;

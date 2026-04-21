@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Feature:** 新增 `ViewerItem.enableGestureScaling` 属性，支持按条目控制手势缩放功能。
+  - 默认值为 `true`，保持向后兼容。
+  - 设置为 `false` 可禁用双指捏合和双击缩放手势。
+  - 适用于文档预览、视频播放等不需要缩放的场景。
+
 ## 0.2.0
 
 - **Breaking:** `ViewerItem` 改为抽象类；通用数据请使用 `DefaultViewerItem`，或自行 `extends ViewerItem`。
