@@ -289,9 +289,15 @@ class RenderCoverFrame extends RenderShiftedBox {
       if (childW > 0 && childH > 0 && viewH > 0) {
         final p = _revealProgress.clamp(0.0, 1.0);
 
-        // scale：p=0 时 1.0，p=1 时 max(1, viewH/childH)
+        // scaleAtP0：p=0 时的状态。
+        // 实现「基于窄边（Contain）」：如果 childH > viewH (纵向长图)，则缩放到 viewH/childH 以一眼看全。
+        final scaleAtP0 = childH > viewH ? (viewH / childH) : 1.0;
+
+        // scaleAtP1：p=1 时的状态。
+        // 实现「填满（Cover）」：确保至少填满视口高度。
         final scaleAtP1 = math.max(1.0, viewH / childH);
-        final scale = lerpDouble(1.0, scaleAtP1, p)!;
+
+        final scale = lerpDouble(scaleAtP0, scaleAtP1, p)!;
         _cachedScale = 1.0; // 不再用 canvas.scale，始终为 1.0
 
         final scaledW = childW * scale;
@@ -308,13 +314,18 @@ class RenderCoverFrame extends RenderShiftedBox {
           );
         }
 
-        // dx：水平居中
-        final dx = (viewW - scaledW) / 2.0;
-        // dy：p=0 居中，p=1 顶对齐
-        final dyAtP0 = (viewH - childH) / 2.0;
-        final dy = lerpDouble(dyAtP0, 0.0, p)!;
+        // 计算两个极端状态下的理想 dy 偏移量
+        // p=0 时：垂直居中 (基于缩放后的高度)
+        final scaledHAtP0 = childH * scaleAtP0;
+        final dyAtP0 = (viewH - scaledHAtP0) / 2.0;
+        // p=1 时：顶部对齐
+        const dyAtP1 = 0.0;
 
-        // 通过 BoxParentData.offset 设置 child 的 layout 位置
+        // dx：始终水平居中
+        final dx = (viewW - scaledW) / 2.0;
+        // dy：在居中和顶对齐之间线性插值
+        final dy = lerpDouble(dyAtP0, dyAtP1, p)!;
+
         final childParentData = child!.parentData as BoxParentData;
         childParentData.offset = Offset(dx, dy);
 
