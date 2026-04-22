@@ -61,6 +61,7 @@ class _ViewerMediaCoverFrameState extends State<ViewerMediaCoverFrame> {
   Widget build(BuildContext context) {
     final scope = MediaCardChromeScope.maybeOf(context);
     final clipRadiusListenable = scope?.clipRadiusListenable;
+    final clipRadiusSnapshot = clipRadiusListenable?.value ?? 0.0;
 
     final effectiveListenable =
         widget.revealProgressListenable ?? InfoRevealScope.maybeOf(context);
@@ -69,7 +70,7 @@ class _ViewerMediaCoverFrameState extends State<ViewerMediaCoverFrame> {
       screenWidth: MediaQuery.sizeOf(context).width,
       revealProgress: widget.revealProgress ?? 0,
       revealProgressListenable: effectiveListenable,
-      clipRadius: clipRadiusListenable != null ? clipRadiusListenable.value : 0,
+      clipRadius: clipRadiusSnapshot,
       clipRadiusListenable: clipRadiusListenable,
       layoutChildToViewport: widget.layoutChildToViewport,
       child: widget.child,
@@ -99,6 +100,7 @@ class _CoverFrameRenderObjectWidget extends SingleChildRenderObjectWidget {
 
   @override
   RenderObject createRenderObject(BuildContext context) {
+    final _l = clipRadiusListenable; // 局部变量以触发类型晋升
     return RenderCoverFrame(
       screenWidth: screenWidth,
       revealProgress: revealProgress,
@@ -114,6 +116,9 @@ class _CoverFrameRenderObjectWidget extends SingleChildRenderObjectWidget {
     BuildContext context,
     covariant RenderCoverFrame renderObject,
   ) {
+    final oldClipR = renderObject._clipRadius;
+    final oldListenable = renderObject._clipRadiusListenable;
+    final sameListenable = identical(oldListenable, clipRadiusListenable);
     renderObject
       ..screenWidth = screenWidth
       ..revealProgress = revealProgress
@@ -157,6 +162,7 @@ class RenderCoverFrame extends RenderShiftedBox {
         super(null);
 
   double _screenWidth;
+
   set screenWidth(double v) {
     if (_screenWidth == v) return;
     _screenWidth = v;
@@ -164,6 +170,7 @@ class RenderCoverFrame extends RenderShiftedBox {
   }
 
   double _revealProgress;
+
   set revealProgress(double v) {
     if (_revealProgress == v) return;
     _revealProgress = v;
@@ -171,8 +178,10 @@ class RenderCoverFrame extends RenderShiftedBox {
   }
 
   ValueListenable<double>? _revealProgressListenable;
+
   ValueListenable<double>? get revealProgressListenable =>
       _revealProgressListenable;
+
   set revealProgressListenable(ValueListenable<double>? v) {
     if (_revealProgressListenable == v) return;
     if (attached) _revealProgressListenable?.removeListener(_onProgressChange);
@@ -182,6 +191,7 @@ class RenderCoverFrame extends RenderShiftedBox {
   }
 
   double _clipRadius;
+
   set clipRadius(double v) {
     if (_clipRadius == v) return;
     _clipRadius = v;
@@ -189,7 +199,9 @@ class RenderCoverFrame extends RenderShiftedBox {
   }
 
   ValueListenable<double>? _clipRadiusListenable;
+
   ValueListenable<double>? get clipRadiusListenable => _clipRadiusListenable;
+
   set clipRadiusListenable(ValueListenable<double>? v) {
     if (_clipRadiusListenable == v) return;
     if (attached) _clipRadiusListenable?.removeListener(_onClipRadiusChange);
@@ -213,7 +225,9 @@ class RenderCoverFrame extends RenderShiftedBox {
   }
 
   bool _layoutChildToViewport;
+
   bool get layoutChildToViewport => _layoutChildToViewport;
+
   set layoutChildToViewport(bool v) {
     if (_layoutChildToViewport == v) return;
     _layoutChildToViewport = v;
@@ -229,6 +243,12 @@ class RenderCoverFrame extends RenderShiftedBox {
     super.attach(owner);
     _revealProgressListenable?.addListener(_onProgressChange);
     _clipRadiusListenable?.addListener(_onClipRadiusChange);
+    // 注册监听器后立即同步当前 listenable 值。
+    // 当发生 GlobalKey reparent（如翻页时 _zoomKey 引起的子树移动）时，
+    // build() 中读取的 clipRadius 快照值可能是陈旧的 0，
+    // attach 后如果 listenable 没有新通知，_clipRadius 将永远是 0，导致圆角不生效。
+    _onClipRadiusChange();
+    _onProgressChange();
   }
 
   @override
@@ -345,6 +365,14 @@ class RenderCoverFrame extends RenderShiftedBox {
   }
 
   // ── 绘制 ────────────────────────────────────────────────────────────────
+  //
+  // ⚠️ 关键：必须使用 context.pushClipRRect() 而非 canvas.clipRRect()。
+  //
+  // canvas.clipRRect() 只作用于当前 canvas 层。PhotoView 内部会创建
+  // RepaintBoundary，产生独立的合成层（composited layer）。canvas 级裁剪
+  // 无法穿透合成层边界，导致圆角对 PhotoView 子树无效（视觉上无圆角）。
+  //
+  // context.pushClipRRect() 会将裁剪信息下推到合成层，正确作用于整个子树。
 
   @override
   void paint(PaintingContext context, Offset offset) {
@@ -353,56 +381,31 @@ class RenderCoverFrame extends RenderShiftedBox {
     final childParentData = child!.parentData as BoxParentData;
     final childOffset = childParentData.offset;
 
-    if (_layoutChildToViewport || _cachedScale == 1.0) {
-      // 无缩放：直接绘制（child 已通过 layout offset 定位）
-      if (_cachedEffectiveRadius > 0.5) {
-        final clipRect = Rect.fromLTWH(
-          offset.dx + childOffset.dx,
-          offset.dy + childOffset.dy,
-          child!.size.width * _cachedScale,
-          child!.size.height * _cachedScale,
-        );
-        context.canvas.save();
-        context.canvas.clipRRect(
-          RRect.fromRectAndRadius(
-            clipRect,
-            Radius.circular(_cachedEffectiveRadius),
-          ),
-        );
-        context.paintChild(child!, offset + childOffset);
-        context.canvas.restore();
-      } else {
-        context.canvas.save();
-        context.canvas.clipRect(offset & size);
-        context.paintChild(child!, offset + childOffset);
-        context.canvas.restore();
-      }
-      return;
-    }
-
-    // 有缩放：child 已通过 layout offset 定位到正确位置，
-    // 在此基础上应用 scale 变换（以 child 左上角为原点缩放）
-    final paintOrigin = offset + childOffset;
-    final scaledW = child!.size.width * _cachedScale;
-    final scaledH = child!.size.height * _cachedScale;
-
-    context.canvas.save();
-
+    // _cachedScale 始终为 1.0（尺寸通过 layout 控制，不用 canvas.scale），
+    // 因此只需一个绘制路径。
     if (_cachedEffectiveRadius > 0.5) {
-      context.canvas.clipRRect(
+      // 有圆角：pushClipRRect 确保合成子层也被裁剪。
+      // childRect 为 child 在本地坐标系中的矩形（相对于 offset）。
+      final childRect = childOffset & child!.size;
+      context.pushClipRRect(
+        needsCompositing,
+        offset,
+        childRect,
         RRect.fromRectAndRadius(
-          Rect.fromLTWH(paintOrigin.dx, paintOrigin.dy, scaledW, scaledH),
+          childRect,
           Radius.circular(_cachedEffectiveRadius),
         ),
+        (ctx, o) => ctx.paintChild(child!, o + childOffset),
       );
     } else {
-      context.canvas.clipRect(offset & size);
+      // 无圆角：pushClipRect 防止 child 溢出到 frame 之外。
+      context.pushClipRect(
+        needsCompositing,
+        offset,
+        Offset.zero & size,
+        (ctx, o) => ctx.paintChild(child!, o + childOffset),
+      );
     }
-
-    context.canvas.translate(paintOrigin.dx, paintOrigin.dy);
-    context.canvas.scale(_cachedScale, _cachedScale);
-    context.paintChild(child!, Offset.zero);
-    context.canvas.restore();
   }
 
   // ── 命中测试 ────────────────────────────────────────────────────────────

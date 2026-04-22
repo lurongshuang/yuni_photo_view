@@ -162,8 +162,8 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
     _info.addListener(_onInfoChange);
 
     if (_mediaCardChromeEnabled(widget.theme)) {
-      _mediaCardClipNotifier =
-          ValueNotifier<double>(_mediaCardInitialClipRadius());
+      final initialRadius = _mediaCardInitialClipRadius();
+      _mediaCardClipNotifier = ValueNotifier<double>(initialRadius);
     }
   }
 
@@ -186,18 +186,30 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
     super.didUpdateWidget(oldWidget);
     final wasOn = _mediaCardChromeEnabled(oldWidget.theme);
     final on = _mediaCardChromeEnabled(widget.theme);
+
+    // 🔍 调试日志：页面更新
+    if (oldWidget.barsVisible != widget.barsVisible ||
+        oldWidget.pageController.isZoomed != widget.pageController.isZoomed) {}
+
     if (!wasOn && on) {
-      _mediaCardClipNotifier =
-          ValueNotifier<double>(_mediaCardInitialClipRadius());
+      final initialRadius = _mediaCardInitialClipRadius();
+      _mediaCardClipNotifier = ValueNotifier<double>(initialRadius);
     } else if (wasOn && !on) {
       _mediaCardClipNotifier?.dispose();
       _mediaCardClipNotifier = null;
+    } else if (on && _mediaCardClipNotifier != null) {
+      // 检查是否需要更新圆角值
+      final newRadius = _mediaCardInitialClipRadius();
+      if (_mediaCardClipNotifier!.value != newRadius) {
+        _mediaCardClipNotifier!.value = newRadius;
+      }
     }
   }
 
   double _mediaCardInitialClipRadius() {
     final immersed = !widget.barsVisible || widget.pageController.isZoomed;
-    return immersed ? 0.0 : widget.theme.mediaCardBorderRadius;
+    final radius = immersed ? 0.0 : widget.theme.mediaCardBorderRadius;
+    return radius;
   }
 
   double _resolveScreenHeight(BuildContext ctx) =>
@@ -354,7 +366,8 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       key: _zoomKey,
       revealProgressListenable: _infoRevealProgressNotifier,
       enableZoom: _cfg.enableZoom && widget.item.enableGestureScaling,
-      enableDoubleTap: _cfg.enableDoubleTapZoom && widget.item.enableGestureScaling,
+      enableDoubleTap:
+          _cfg.enableDoubleTapZoom && widget.item.enableGestureScaling,
       pageController: widget.pageController,
       theme: widget.theme,
       onSingleTap: _cfg.enableTapToToggleBars ? widget.onContentTap : null,
@@ -373,14 +386,14 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       final cardListenable = barsNotifier != null
           ? Listenable.merge([widget.pageController, barsNotifier])
           : widget.pageController;
+      // 用局部变量捕获，避免闭包内字段晋升失败（Dart 不对私有字段在 lambda 内晋升）
+      final notifier = _mediaCardClipNotifier!;
       mediaZoom = ListenableBuilder(
         listenable: cardListenable,
         builder: (context, _) {
           // 优先从 barsVisibleNotifier 读取最新值（notifier 触发时 widget.barsVisible 可能还未更新）
           final barsVisible = barsNotifier?.value ?? widget.barsVisible;
           final immersed = !barsVisible || widget.pageController.isZoomed;
-          debugPrint(
-              '[CardChrome] ListenableBuilder rebuild: barsVisible=$barsVisible isZoomed=${widget.pageController.isZoomed} immersed=$immersed');
           return _AnimatedMediaCardChrome(
             key: _mediaCardChromeKey,
             immersed: immersed,
@@ -388,7 +401,7 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
             borderRadius: theme.mediaCardBorderRadius,
             duration: theme.mediaCardAnimationDuration,
             curve: theme.mediaCardAnimationCurve,
-            clipRadiusNotifier: _mediaCardClipNotifier!,
+            clipRadiusNotifier: notifier,
             child: zoomCore,
           );
         },
@@ -526,8 +539,6 @@ class _AnimatedMediaCardChromeState extends State<_AnimatedMediaCardChrome>
     _curveAnim.addListener(_syncClipRadius);
     _controller.value = widget.immersed ? 1.0 : 0.0;
     _syncClipRadius();
-    debugPrint(
-        '[CardChrome] initState immersed=${widget.immersed} controller.value=${_controller.value}');
   }
 
   void _syncClipRadius() {
@@ -544,8 +555,6 @@ class _AnimatedMediaCardChromeState extends State<_AnimatedMediaCardChrome>
       _controller.duration = widget.duration;
     }
     if (oldWidget.immersed != widget.immersed) {
-      debugPrint(
-          '[CardChrome] didUpdateWidget immersed: ${oldWidget.immersed} → ${widget.immersed}');
       if (widget.immersed) {
         _controller.forward();
       } else {
