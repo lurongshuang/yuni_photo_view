@@ -116,6 +116,9 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   _GestureMode _gestureMode = _GestureMode.pending;
   double _dismissRawOffset = 0;
 
+  /// 已解析的手势缩放配置。
+  bool _enableGestureScalingResolved = true;
+
   /// 卡片圆角半径；与 [_AnimatedMediaCardChrome] 动画同步，供 [MediaCardChromeScope] / [ViewerPageContext] 使用。
   ValueNotifier<double>? _mediaCardClipNotifier;
 
@@ -165,6 +168,20 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       final initialRadius = _mediaCardInitialClipRadius();
       _mediaCardClipNotifier = ValueNotifier<double>(initialRadius);
     }
+    _resolveEnableGestureScaling();
+  }
+
+  void _resolveEnableGestureScaling() {
+    final res = widget.item.enableGestureScaling;
+    if (res is bool) {
+      _enableGestureScalingResolved = res;
+    } else {
+      res.then((val) {
+        if (mounted && _enableGestureScalingResolved != val) {
+          setState(() => _enableGestureScalingResolved = val);
+        }
+      });
+    }
   }
 
   void _onInfoChange() {
@@ -184,6 +201,9 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   @override
   void didUpdateWidget(ViewerPageShell oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.item != widget.item) {
+      _resolveEnableGestureScaling();
+    }
     final wasOn = _mediaCardChromeEnabled(oldWidget.theme);
     final on = _mediaCardChromeEnabled(widget.theme);
 
@@ -365,9 +385,9 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
     final zoomCore = _ZoomableMediaWrapper(
       key: _zoomKey,
       revealProgressListenable: _infoRevealProgressNotifier,
-      enableZoom: _cfg.enableZoom && widget.item.enableGestureScaling,
+      enableZoom: _cfg.enableZoom && _enableGestureScalingResolved,
       enableDoubleTap:
-          _cfg.enableDoubleTapZoom && widget.item.enableGestureScaling,
+          _cfg.enableDoubleTapZoom && _enableGestureScalingResolved,
       pageController: widget.pageController,
       theme: widget.theme,
       onSingleTap: _cfg.enableTapToToggleBars ? widget.onContentTap : null,

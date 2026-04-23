@@ -1,3 +1,5 @@
+import 'dart:async';
+
 /// 查看器中的一条数据项抽象。
 ///
 /// 框架只强依赖 [id]、[hasInfo]；其余字段由子类按需覆盖。
@@ -25,7 +27,7 @@ abstract class ViewerItem {
   /// 默认返回 `true` 以保持向后兼容性。子类可以覆盖此 getter 以提供自定义行为。
   ///
   /// 当返回 `false` 时，查看器系统将禁用该条目的手势缩放功能。
-  bool get enableGestureScaling => true;
+  FutureOr<bool> get enableGestureScaling => true;
 
   @override
   String toString() => 'ViewerItem(id: $id, hasInfo: $hasInfo)';
@@ -58,7 +60,7 @@ class DefaultViewerItem extends ViewerItem {
   final bool hasInfo;
 
   @override
-  final bool enableGestureScaling;
+  final FutureOr<bool> enableGestureScaling;
 
   DefaultViewerItem copyWith({
     String? id,
@@ -67,7 +69,7 @@ class DefaultViewerItem extends ViewerItem {
     Map<String, dynamic>? meta,
     dynamic extra,
     bool? hasInfo,
-    bool? enableGestureScaling,
+    FutureOr<bool>? enableGestureScaling,
   }) {
     return DefaultViewerItem(
       id: id ?? this.id,
