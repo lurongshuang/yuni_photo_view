@@ -291,6 +291,7 @@ class _MediaViewerState extends State<MediaViewer>
 
   // 顶底栏显隐（单击内容切换）
   bool _barsVisible = true;
+
   // 内部 notifier，供 ViewerPageShell 监听 barsVisible 变化，不依赖外部 controller
   late final ValueNotifier<bool> _internalBarsVisibleNotifier;
 
@@ -463,6 +464,7 @@ class _MediaViewerState extends State<MediaViewer>
       _internalItems.addAll(newItems);
     });
   }
+
   void _attachControllerCallbacks() {
     widget.controller?.attachCallbacks(
       jumpToPage: _jumpToPage,
@@ -527,6 +529,7 @@ class _MediaViewerState extends State<MediaViewer>
   }
 
   void _showCurrentInfo() => _currentInfoCtrl.show();
+
   void _hideCurrentInfo() => _currentInfoCtrl.hide();
 
   void _requestZoomInOnCurrentPage() => _pageCtrlAt(_currentIndex)
@@ -740,7 +743,8 @@ class _MediaViewerState extends State<MediaViewer>
                       screenHeight: screenH,
                       onDismissUpdate: _onDismissUpdate,
                       onDismissEnd: _onDismissEnd,
-                      onContentTap: _cfg.enableTapToToggleBars ? _toggleBars : null,
+                      onContentTap:
+                          _cfg.enableTapToToggleBars ? _toggleBars : null,
                       controller: widget.controller,
                     ),
                   ),
@@ -755,20 +759,6 @@ class _MediaViewerState extends State<MediaViewer>
     // ── 2. 根布局 ──
     Widget stack = Stack(
       children: [
-        // 背景层：仅监听下拉位移
-        ValueListenableBuilder<double>(
-          valueListenable: _dismissOffset,
-          builder: (context, rawOffset, _) {
-            final progress = _dismissProgress(rawOffset);
-            final bgAlpha = (1.0 - progress).clamp(0.0, 1.0);
-            return Positioned.fill(
-              child: ColoredBox(
-                color: widget.theme.backgroundColor.withValues(alpha: bgAlpha),
-              ),
-            );
-          },
-        ),
-
         // 内容平移与分页层
         contentLayer,
 
@@ -825,7 +815,6 @@ class _MediaViewerState extends State<MediaViewer>
                       ),
                     ),
                   ),
-
                 if (widget.bottomBarBuilder != null)
                   Positioned(
                     bottom: 0,
@@ -845,7 +834,6 @@ class _MediaViewerState extends State<MediaViewer>
                       ),
                     ),
                   ),
-
                 if (widget.overlayBuilder != null)
                   Positioned.fill(
                     child: widget.overlayBuilder!(ctx, _barCtx(progress)),
@@ -915,7 +903,37 @@ class _MediaViewerState extends State<MediaViewer>
       );
     }
 
-    return stack;
+    final bgBrightness =
+        ThemeData.estimateBrightnessForColor(widget.theme.backgroundColor);
+    final iconBrightness =
+        bgBrightness == Brightness.dark ? Brightness.light : Brightness.dark;
+
+    return ValueListenableBuilder<double>(
+      valueListenable: _dismissOffset,
+      builder: (context, rawOffset, _) {
+        final progress = _dismissProgress(rawOffset);
+        final bgAlpha = (1.0 - progress).clamp(0.0, 1.0);
+        final currentColor =
+            widget.theme.backgroundColor.withValues(alpha: bgAlpha);
+
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle(
+            systemNavigationBarColor: currentColor,
+            systemNavigationBarIconBrightness: iconBrightness,
+            // systemNavigationBarDividerColor: Colors.transparent,
+            // statusBarColor: Colors.transparent,
+            // statusBarIconBrightness: iconBrightness,
+            // systemStatusBarContrastEnforced: false,
+            // systemNavigationBarContrastEnforced: false,
+          ),
+          child: Scaffold(
+            backgroundColor: currentColor,
+            resizeToAvoidBottomInset: false,
+            body: stack,
+          ),
+        );
+      },
+    );
   }
 }
 
