@@ -279,7 +279,9 @@ class RenderCoverFrame extends RenderShiftedBox {
       final childParentData = child!.parentData as BoxParentData;
       childParentData.offset = Offset.zero;
       _cachedScale = 1.0;
-      _cachedEffectiveRadius = 0.0;
+      _cachedEffectiveRadius = _clipRadius <= 0
+          ? 0.0
+          : math.min(_clipRadius, math.min(viewW, viewH) / 2.0);
     } else {
       // 正常模式：child 在宽度等于视口宽度、高度无限的约束下自然布局。
       child!.layout(
