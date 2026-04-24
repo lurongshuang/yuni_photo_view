@@ -25,6 +25,7 @@ class ViewerDiffuseBackground extends StatefulWidget {
     this.colorProvider,
     this.sizeProvider,
     this.ballSize = 280,
+    this.child,
   });
 
   /// 静态同步模式：适用于已知主色调和尺寸的场景（例如从列表页缓存中带入）。
@@ -35,6 +36,7 @@ class ViewerDiffuseBackground extends StatefulWidget {
     required Color color,
     required Size imageSize,
     double ballSize = 280,
+    Widget? child,
   }) =>
       ViewerDiffuseBackground(
         key: key,
@@ -42,6 +44,7 @@ class ViewerDiffuseBackground extends StatefulWidget {
         color: color,
         imageSize: imageSize,
         ballSize: ballSize,
+        child: child,
       );
 
   /// 异步提供者模式：适用于需要动态计算（如实时 Palette 提取）的场景。
@@ -52,6 +55,7 @@ class ViewerDiffuseBackground extends StatefulWidget {
     required Future<Color?> Function() colorProvider,
     required Future<Size?> Function() sizeProvider,
     double ballSize = 280,
+    Widget? child,
   }) =>
       ViewerDiffuseBackground(
         key: key,
@@ -59,6 +63,7 @@ class ViewerDiffuseBackground extends StatefulWidget {
         colorProvider: colorProvider,
         sizeProvider: sizeProvider,
         ballSize: ballSize,
+        child: child,
       );
 
   /// 当前页面的上下文。
@@ -78,6 +83,9 @@ class ViewerDiffuseBackground extends StatefulWidget {
 
   /// 背景球的尺寸基数。
   final double ballSize;
+
+  /// 子组件，用于获取实际渲染空间。
+  final Widget? child;
 
   @override
   State<ViewerDiffuseBackground> createState() =>
@@ -143,7 +151,9 @@ class _ViewerDiffuseBackgroundState extends State<ViewerDiffuseBackground> {
   @override
   Widget build(BuildContext context) {
     final data = _resolvedData;
-    if (data == null) return const SizedBox.shrink();
+    if (data == null) {
+      return widget.child ?? const SizedBox.shrink();
+    }
 
     final listenable = widget.pageCtx.mediaCardClipRadiusListenable;
 
@@ -154,61 +164,150 @@ class _ViewerDiffuseBackgroundState extends State<ViewerDiffuseBackground> {
         // 显隐判断：工具栏显示 且 处于卡片状态（有圆角）
         final isVisible = widget.pageCtx.barsVisible && radius > 0.1;
 
-        // 计算图片实际渲染区域（contain）
-        final availableSize = widget.pageCtx.availableSize;
-        final imgSize = data.size;
+        // 如果有 child，使用简化的布局方式
+        if (widget.child != null) {
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final availableSize = Size(
+                constraints.maxWidth.isFinite ? constraints.maxWidth : widget.pageCtx.availableSize.width,
+                constraints.maxHeight.isFinite ? constraints.maxHeight : widget.pageCtx.availableSize.height,
+              );
+              
+              final imgSize = data.size;
 
-        Rect renderedRect =
-            Rect.fromLTWH(0, 0, availableSize.width, availableSize.height);
-        if (imgSize.width > 0 && imgSize.height > 0) {
-          final contentW = availableSize.width;
-          final contentH = availableSize.height;
-          final imgRatio = imgSize.width / imgSize.height;
-          final viewportRatio = contentW / contentH;
+              // 计算图片在 contain 模式下的实际渲染区域
+              Rect renderedRect = Rect.fromLTWH(0, 0, availableSize.width, availableSize.height);
+              if (imgSize.width > 0 && imgSize.height > 0) {
+                final contentW = availableSize.width;
+                final contentH = availableSize.height;
+                final imgRatio = imgSize.width / imgSize.height;
+                final viewportRatio = contentW / contentH;
 
-          double drawW, drawH;
-          if (imgRatio > viewportRatio) {
-            drawW = contentW;
-            drawH = contentW / imgRatio;
-          } else {
-            drawH = contentH;
-            drawW = contentH * imgRatio;
-          }
-          final dx = (contentW - drawW) / 2;
-          final dy = (contentH - drawH) / 2;
-          renderedRect = Rect.fromLTWH(dx, dy, drawW, drawH);
+                double drawW, drawH;
+                if (imgRatio > viewportRatio) {
+                  drawW = contentW;
+                  drawH = contentW / imgRatio;
+                } else {
+                  drawH = contentH;
+                  drawW = contentH * imgRatio;
+                }
+                final dx = (contentW - drawW) / 2;
+                final dy = (contentH - drawH) / 2;
+                renderedRect = Rect.fromLTWH(dx, dy, drawW, drawH);
+              }
+
+              return Stack(
+                children: [
+                  // child 层
+                  Positioned.fill(
+                    child: widget.child!,
+                  ),
+                  // 背景球层 - 在 child 之上，但使用 IgnorePointer
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    opacity: isVisible ? 1.0 : 0.0,
+                    child: Positioned(
+                      left: renderedRect.left,
+                      top: renderedRect.top,
+                      width: renderedRect.width,
+                      height: renderedRect.height,
+                      child: IgnorePointer(
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            // 左下角的球
+                            Positioned(
+                              left: -widget.ballSize * 0.4,
+                              bottom: -widget.ballSize * 0.4,
+                              child: ViewerDiffuseBall(
+                                color: data.color,
+                                size: widget.ballSize,
+                              ),
+                            ),
+                            // 右上角的球
+                            Positioned(
+                              right: -widget.ballSize * 0.4,
+                              top: -widget.ballSize * 0.4,
+                              child: ViewerDiffuseBall(
+                                color: data.color,
+                                size: widget.ballSize,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
         }
 
-        return AnimatedOpacity(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          opacity: isVisible ? 1.0 : 0.0,
-          child: Stack(
-            children: [
-              Positioned(
-                left: renderedRect.left,
-                top: renderedRect.top,
-                width: renderedRect.width,
-                height: renderedRect.height,
-                child: IgnorePointer(
-                  child: Stack(
-                    children: [
-                      ViewerDiffuseBall(
-                        color: data.color,
-                        alignment: const Alignment(-0.8, 0.7), // 左下
-                        size: widget.ballSize,
+        // 如果没有 child，使用原有逻辑
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final availableSize = Size(
+              constraints.maxWidth.isFinite ? constraints.maxWidth : widget.pageCtx.availableSize.width,
+              constraints.maxHeight.isFinite ? constraints.maxHeight : widget.pageCtx.availableSize.height,
+            );
+            
+            final imgSize = data.size;
+
+            Rect renderedRect =
+                Rect.fromLTWH(0, 0, availableSize.width, availableSize.height);
+            if (imgSize.width > 0 && imgSize.height > 0) {
+              final contentW = availableSize.width;
+              final contentH = availableSize.height;
+              final imgRatio = imgSize.width / imgSize.height;
+              final viewportRatio = contentW / contentH;
+
+              double drawW, drawH;
+              if (imgRatio > viewportRatio) {
+                drawW = contentW;
+                drawH = contentW / imgRatio;
+              } else {
+                drawH = contentH;
+                drawW = contentH * imgRatio;
+              }
+              final dx = (contentW - drawW) / 2;
+              final dy = (contentH - drawH) / 2;
+              renderedRect = Rect.fromLTWH(dx, dy, drawW, drawH);
+            }
+
+            return Stack(
+              children: [
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  opacity: isVisible ? 1.0 : 0.0,
+                  child: Positioned(
+                    left: renderedRect.left,
+                    top: renderedRect.top,
+                    width: renderedRect.width,
+                    height: renderedRect.height,
+                    child: IgnorePointer(
+                      child: Stack(
+                        children: [
+                          ViewerDiffuseBall(
+                            color: data.color,
+                            alignment: const Alignment(-0.8, 0.7), // 左下
+                            size: widget.ballSize,
+                          ),
+                          ViewerDiffuseBall(
+                            color: data.color,
+                            alignment: const Alignment(0.8, -0.7), // 右上
+                            size: widget.ballSize,
+                          ),
+                        ],
                       ),
-                      ViewerDiffuseBall(
-                        color: data.color,
-                        alignment: const Alignment(0.8, -0.7), // 右上
-                        size: widget.ballSize,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            );
+          },
         );
       },
     );
@@ -220,32 +319,40 @@ class ViewerDiffuseBall extends StatelessWidget {
   const ViewerDiffuseBall({
     super.key,
     required this.color,
-    required this.alignment,
+    this.alignment,
     required this.size,
     this.blurSigma = 60,
   });
 
   final Color color;
-  final Alignment alignment;
+  final Alignment? alignment;
   final double size;
   final double blurSigma;
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: alignment,
-      child: ImageFiltered(
-        imageFilter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: color.withValues(alpha: 0.6),
-          ),
+    final ball = ImageFiltered(
+      imageFilter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withValues(alpha: 0.6),
         ),
       ),
     );
+
+    // 如果提供了 alignment，使用 Align 包裹
+    if (alignment != null) {
+      return Align(
+        alignment: alignment!,
+        child: ball,
+      );
+    }
+
+    // 否则直接返回球
+    return ball;
   }
 }
 

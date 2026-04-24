@@ -18,7 +18,10 @@ class ViewerTheme {
     this.infoShowCurve = Curves.easeOutCubic,
     this.infoHideCurve = Curves.easeInOutCubic,
     this.dismissSnapBackCurve = Curves.easeOutCubic,
-    this.mediaCardInset = EdgeInsets.zero,
+    this.mediaCardInsetTop = 0,
+    this.mediaCardInsetBottom = 0,
+    this.mediaCardInsetLeft = 0,
+    this.mediaCardInsetRight = 0,
     this.mediaCardBorderRadius = 0,
     this.mediaCardAnimationDuration = const Duration(milliseconds: 280),
     this.mediaCardAnimationCurve = Curves.easeInOutCubic,
@@ -71,12 +74,25 @@ class ViewerTheme {
 
   // ── 主内容「卡片」外框（相册风格）──────────────────────────────────────────
 
-  /// 顶栏、底栏均显示且当前页未缩放时，主内容区相对视口的外边距。
-  ///
-  /// 与 [mediaCardBorderRadius] 同时为默认零时，不启用该效果。
-  ///
-  /// **实现位置**：在 PhotoView 缩放层**之外**包裹，边距与圆角不随双指缩放变形。
-  final EdgeInsets mediaCardInset;
+  /// 顶栏、底栏均显示且当前页未缩放时，主内容区距视口顶部的间距。
+  final double mediaCardInsetTop;
+
+  /// 顶栏、底栏均显示且当前页未缩放时，主内容区距视口底部的间距。
+  final double mediaCardInsetBottom;
+
+  /// 顶栏、底栏均显示且当前页未缩放时，主内容区距视口左侧的间距。
+  final double mediaCardInsetLeft;
+
+  /// 顶栏、底栏均显示且当前页未缩放时，主内容区距视口右侧的间距。
+  final double mediaCardInsetRight;
+
+  /// 由四个方向间距合成的 [EdgeInsets]，供内部动画使用。
+  EdgeInsets get mediaCardInset => EdgeInsets.fromLTRB(
+        mediaCardInsetLeft,
+        mediaCardInsetTop,
+        mediaCardInsetRight,
+        mediaCardInsetBottom,
+      );
 
   /// 与 [mediaCardInset] 同时生效：圆角作用在 [ViewerMediaCoverFrame] 绘制的**图片外接矩形**上，
   /// 而非整段视口高度（避免「整屏灰块套小图」）。
@@ -132,7 +148,10 @@ class ViewerTheme {
     Curve? infoShowCurve,
     Curve? infoHideCurve,
     Curve? dismissSnapBackCurve,
-    EdgeInsets? mediaCardInset,
+    double? mediaCardInsetTop,
+    double? mediaCardInsetBottom,
+    double? mediaCardInsetLeft,
+    double? mediaCardInsetRight,
     double? mediaCardBorderRadius,
     Duration? mediaCardAnimationDuration,
     Curve? mediaCardAnimationCurve,
@@ -154,7 +173,10 @@ class ViewerTheme {
       infoShowCurve: infoShowCurve ?? this.infoShowCurve,
       infoHideCurve: infoHideCurve ?? this.infoHideCurve,
       dismissSnapBackCurve: dismissSnapBackCurve ?? this.dismissSnapBackCurve,
-      mediaCardInset: mediaCardInset ?? this.mediaCardInset,
+      mediaCardInsetTop: mediaCardInsetTop ?? this.mediaCardInsetTop,
+      mediaCardInsetBottom: mediaCardInsetBottom ?? this.mediaCardInsetBottom,
+      mediaCardInsetLeft: mediaCardInsetLeft ?? this.mediaCardInsetLeft,
+      mediaCardInsetRight: mediaCardInsetRight ?? this.mediaCardInsetRight,
       mediaCardBorderRadius:
           mediaCardBorderRadius ?? this.mediaCardBorderRadius,
       mediaCardAnimationDuration:

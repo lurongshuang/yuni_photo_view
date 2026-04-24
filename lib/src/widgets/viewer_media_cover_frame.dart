@@ -100,7 +100,6 @@ class _CoverFrameRenderObjectWidget extends SingleChildRenderObjectWidget {
 
   @override
   RenderObject createRenderObject(BuildContext context) {
-    final _l = clipRadiusListenable; // 局部变量以触发类型晋升
     return RenderCoverFrame(
       screenWidth: screenWidth,
       revealProgress: revealProgress,
@@ -116,9 +115,6 @@ class _CoverFrameRenderObjectWidget extends SingleChildRenderObjectWidget {
     BuildContext context,
     covariant RenderCoverFrame renderObject,
   ) {
-    final oldClipR = renderObject._clipRadius;
-    final oldListenable = renderObject._clipRadiusListenable;
-    final sameListenable = identical(oldListenable, clipRadiusListenable);
     renderObject
       ..screenWidth = screenWidth
       ..revealProgress = revealProgress

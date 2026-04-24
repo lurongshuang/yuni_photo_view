@@ -15,7 +15,10 @@ class MediaCardChromeCase extends StatelessWidget {
   const MediaCardChromeCase({super.key});
 
   static const _theme = ViewerTheme(
-    mediaCardInset: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    mediaCardInsetTop: 10,
+    mediaCardInsetBottom: 10,
+    mediaCardInsetLeft: 14,
+    mediaCardInsetRight: 14,
     mediaCardBorderRadius: 18,
     mediaCardAnimationDuration: Duration(milliseconds: 300),
   );

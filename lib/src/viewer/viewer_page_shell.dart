@@ -207,23 +207,14 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
     final wasOn = _mediaCardChromeEnabled(oldWidget.theme);
     final on = _mediaCardChromeEnabled(widget.theme);
 
-    // 🔍 调试日志：页面更新
-    if (oldWidget.barsVisible != widget.barsVisible ||
-        oldWidget.pageController.isZoomed != widget.pageController.isZoomed) {}
-
     if (!wasOn && on) {
       final initialRadius = _mediaCardInitialClipRadius();
       _mediaCardClipNotifier = ValueNotifier<double>(initialRadius);
     } else if (wasOn && !on) {
       _mediaCardClipNotifier?.dispose();
       _mediaCardClipNotifier = null;
-    } else if (on && _mediaCardClipNotifier != null) {
-      // 检查是否需要更新圆角值
-      final newRadius = _mediaCardInitialClipRadius();
-      if (_mediaCardClipNotifier!.value != newRadius) {
-        _mediaCardClipNotifier!.value = newRadius;
-      }
     }
+    // 圆角值完全由 _AnimatedMediaCardChrome 的动画控制，不在此直接设置 notifier.value
   }
 
   double _mediaCardInitialClipRadius() {
@@ -596,20 +587,20 @@ class _AnimatedMediaCardChromeState extends State<_AnimatedMediaCardChrome>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _curveAnim,
-      builder: (context, child) {
-        final v = _curveAnim.value;
-        final pad = EdgeInsets.lerp(widget.inset, EdgeInsets.zero, v)!;
-        return Padding(
-          padding: pad,
-          child: MediaCardChromeScope(
-            clipRadiusListenable: widget.clipRadiusNotifier,
+    return MediaCardChromeScope(
+      clipRadiusListenable: widget.clipRadiusNotifier,
+      child: AnimatedBuilder(
+        animation: _curveAnim,
+        builder: (context, child) {
+          final v = _curveAnim.value;
+          final pad = EdgeInsets.lerp(widget.inset, EdgeInsets.zero, v)!;
+          return Padding(
+            padding: pad,
             child: child!,
-          ),
-        );
-      },
-      child: widget.child,
+          );
+        },
+        child: widget.child,
+      ),
     );
   }
 }
