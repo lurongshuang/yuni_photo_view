@@ -44,17 +44,13 @@ class InfoSheetController extends ChangeNotifier {
     final newDefault = defaultShownHeight;
 
     if (_state == InfoState.shown) {
-      // 场景 A：初次获取屏幕高度（之前是 0），且默认就是展示态 -> 直接对齐
-      // 注意：此处不调用 notifyListeners()，因为调用方（ViewerPageShell.build）正处于 build 阶段，
-      // 随后的 ListenableBuilder 自然会读取最新值。若调用则会引发 setState() during build 报错。
       if (oldDefault <= 0 && newDefault > 0) {
         _sheetHeight = newDefault;
+        // 使用 microtask 兜底，防止在 ViewerPageShell.build 中引发 setState 异常
+        Future.microtask(notifyListeners);
       }
-      // 场景 B：屏幕尺寸变化（如旋转），若当前高度超出新上限，需夹紧
       else if (_sheetHeight > maxShownHeight) {
         _sheetHeight = maxShownHeight;
-        // 如果我们确知在构建中（通过 stack trace 知道），应避免立即通知。
-        // 使用 microtask 或 postFrameCallback 兜底以防状态不一致。
         Future.microtask(notifyListeners);
       }
     }

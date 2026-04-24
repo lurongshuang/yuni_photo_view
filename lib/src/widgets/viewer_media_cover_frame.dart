@@ -168,6 +168,7 @@ class RenderCoverFrame extends RenderShiftedBox {
   double _revealProgress;
 
   set revealProgress(double v) {
+    if (_revealProgressListenable != null) return;
     if (_revealProgress == v) return;
     _revealProgress = v;
     markNeedsLayout();

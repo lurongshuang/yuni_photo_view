@@ -161,6 +161,9 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   @override
   void initState() {
     super.initState();
+    if (widget.screenHeight != null) {
+      _info.setScreenHeight(widget.screenHeight!);
+    }
     _infoRevealProgressNotifier = ValueNotifier<double>(_info.revealProgress);
     _info.addListener(_onInfoChange);
 
