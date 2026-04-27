@@ -113,8 +113,8 @@ class _CaseListPage extends StatelessWidget {
         builder: (_) => const ExtensibilityCase(),
       ),
       _CaseEntry(
-        title: '13. 异步分页加载',
-        subtitle: 'onLoadMore 自动预加载（无限滚动效果）',
+        title: '13. 双向异步分页加载',
+        subtitle: 'onLoadMore / onLoadPrevious 自动预加载（无限双向滚动效果）',
         builder: (_) => const PagingCase(),
       ),
       _CaseEntry(

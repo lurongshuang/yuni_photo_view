@@ -24,6 +24,7 @@ class MediaViewerController extends ChangeNotifier {
   VoidCallback? _zoomOutCallback;
   VoidCallback? _zoomResetCallback;
   void Function(List<ViewerItem>)? _appendItemsCallback;
+  void Function(List<ViewerItem>)? _prependItemsCallback;
   void Function(String)? _removeItemCallback;
   void Function(ViewerItem)? _updateItemCallback;
   int _pendingJumpIndex = 0;
@@ -83,6 +84,7 @@ class MediaViewerController extends ChangeNotifier {
     VoidCallback? zoomContentOut,
     VoidCallback? resetContentZoom,
     void Function(List<ViewerItem>)? appendItems,
+    void Function(List<ViewerItem>)? prependItems,
     void Function(String)? removeItem,
     void Function(ViewerItem)? updateItem,
   }) {
@@ -94,6 +96,7 @@ class MediaViewerController extends ChangeNotifier {
     _zoomOutCallback = zoomContentOut;
     _zoomResetCallback = resetContentZoom;
     _appendItemsCallback = appendItems;
+    _prependItemsCallback = prependItems;
     _removeItemCallback = removeItem;
     _updateItemCallback = updateItem;
   }
@@ -142,6 +145,11 @@ class MediaViewerController extends ChangeNotifier {
   /// 向查看器末尾追加新的媒体项目（异步分页场景使用）。
   void appendItems(List<ViewerItem> newItems) {
     _appendItemsCallback?.call(newItems);
+  }
+
+  /// 向查看器开头追加新的媒体项目。
+  void prependItems(List<ViewerItem> newItems) {
+    _prependItemsCallback?.call(newItems);
   }
 
   /// 从查看器中移除指定 [id] 的项目。

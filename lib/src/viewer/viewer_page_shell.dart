@@ -133,6 +133,8 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   Widget? _cachedMedia;
   ViewerItem? _lastItem;
   dynamic _lastItemExtra;
+  int? _lastIndex;
+  int? _lastItemCount;
   bool _lastBarsVisible = true;
   double _lastDismissProgress = 0.0;
 
@@ -149,6 +151,8 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       _lastItem != widget.item ||
       _lastItemExtra != widget.item.extra ||
       _lastBarsVisible != widget.barsVisible ||
+      _lastIndex != widget.index ||
+      _lastItemCount != widget.itemCount ||
       (_lastDismissProgress - widget.dismissProgress).abs() >
           0.001; // ── 辅助 ───────────────────────────────────────────────────────────────
 
@@ -204,6 +208,9 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
   @override
   void didUpdateWidget(ViewerPageShell oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.index != widget.index) {
+      debugPrint('>>> ViewerPageShell: didUpdateWidget index change - oldIndex=${oldWidget.index}, newIndex=${widget.index}, item=${widget.item.id}');
+    }
     if (oldWidget.item != widget.item) {
       _resolveEnableGestureScaling();
     }
@@ -363,6 +370,7 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
     // ── 缓存策略 ──
     // 只有当项或 Builder 变化时才重新调用。滑动 revealProgress 时不重新生成 widget 实例。
     if (_needsRebuildCache) {
+      debugPrint('>>> ViewerPageShell: Rebuilding cache - oldIndex=$_lastIndex, newIndex=${widget.index}, item=${widget.item.id}');
       _cachedMedia = KeyedSubtree(
         key: _mediaGlobalKey,
         child: widget.pageBuilder(ctx, pageCtx),
@@ -370,6 +378,8 @@ class _ViewerPageShellState extends State<ViewerPageShell> {
       _lastItem = widget.item;
       _lastItemExtra = widget.item.extra;
       _lastBarsVisible = widget.barsVisible;
+      _lastIndex = widget.index;
+      _lastItemCount = widget.itemCount;
       _lastDismissProgress = widget.dismissProgress;
     }
 

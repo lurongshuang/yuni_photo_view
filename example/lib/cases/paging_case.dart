@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:yuni_photo_view/yuni_photo_view.dart';
 import '../utils/demo_data.dart';
 
-/// 分页加载案例：演示如何使用 MediaViewer.openPaging 实现“加载更多”功能。
+/// 双向分页加载案例：演示如何使用 MediaViewer.openPaging 实现“前后加载更多”功能。
 class PagingCase extends StatefulWidget {
   const PagingCase({super.key});
 
@@ -12,8 +12,9 @@ class PagingCase extends StatefulWidget {
 
 class _PagingCaseState extends State<PagingCase> {
   int _fetchCount = 0;
+  int _fetchPreviousCount = 0;
 
-  /// 模拟网络异步请求新数据
+  /// 模拟网络异步请求新数据（向后加载）
   Future<PagingResult> _loadMore(ViewerItem lastItem) async {
     debugPrint('[PagingLog] 正在基于最后一项加载更多: ${lastItem.id}');
     await Future.delayed(const Duration(seconds: 1)); // 模拟延迟
@@ -26,7 +27,7 @@ class _PagingCaseState extends State<PagingCase> {
         id: '${item.id}_p$_fetchCount',
         meta: {
           ...?item.meta,
-          'title': '分页加载第 $_fetchCount 批',
+          'title': '向后分页加载第 $_fetchCount 批',
         },
       );
     }).toList();
@@ -37,15 +38,42 @@ class _PagingCaseState extends State<PagingCase> {
     );
   }
 
+  /// 模拟网络异步请求新数据（向前加载）
+  Future<PagingResult> _loadPrevious(ViewerItem firstItem) async {
+    debugPrint('[PagingLog] 正在基于第一项加载向前更多: ${firstItem.id}');
+    await Future.delayed(const Duration(seconds: 1)); // 模拟延迟
+    _fetchPreviousCount++;
+
+    // 构造一批新项目（反向构造以模拟顺序）
+    final List<ViewerItem> newItems = DemoData.images.reversed.map((item) {
+      final defaultItem = item as DefaultViewerItem;
+      return defaultItem.copyWith(
+        id: '${item.id}_prev$_fetchPreviousCount',
+        meta: {
+          ...?item.meta,
+          'title': '向前分页加载第 $_fetchPreviousCount 批',
+        },
+      );
+    }).toList();
+
+    return PagingResult(
+      items: newItems,
+      hasMore: _fetchPreviousCount < 2, // 模拟总共只有 2 批向前数据
+    );
+  }
+
   void _open(BuildContext context) {
     _fetchCount = 0; // 重置计数
+    _fetchPreviousCount = 0;
 
     MediaViewer.openPaging(
       context,
       initialItems: List.from(DemoData.images),
       onLoadMore: _loadMore,
+      onLoadPrevious: _loadPrevious,
       initialHasMore: true,
-      loadThreshold: 2, // 距离末尾 2 张就开始加载
+      initialHasPrevious: true,
+      loadThreshold: 2, // 距离边缘 2 张就开始加载
       pageBuilder: (ctx, pageCtx) {
         return Center(
           child: Column(
@@ -79,9 +107,19 @@ class _PagingCaseState extends State<PagingCase> {
               onPressed: () => Navigator.pop(ctx),
             ),
             const Spacer(),
-            Text(
-              '已加载批次: $_fetchCount',
-              style: const TextStyle(color: Colors.white),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '向前已加载: $_fetchPreviousCount',
+                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                ),
+                Text(
+                  '向后已加载: $_fetchCount',
+                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                ),
+              ],
             ),
             const SizedBox(width: 16),
           ],
@@ -93,18 +131,18 @@ class _PagingCaseState extends State<PagingCase> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('异步分页加载')),
+      appBar: AppBar(title: const Text('双向异步分页加载')),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.autorenew, size: 64, color: Colors.deepPurple),
+            const Icon(Icons.compare_arrows, size: 64, color: Colors.deepPurple),
             const SizedBox(height: 16),
-            const Text('滑动手感演示：滑到末尾前将自动请求新数据'),
+            const Text('双向加载演示：滑到开头或末尾都会触发请求'),
             const SizedBox(height: 32),
             ElevatedButton(
               onPressed: () => _open(context),
-              child: const Text('打开分页查看器'),
+              child: const Text('打开双向分页查看器'),
             ),
           ],
         ),

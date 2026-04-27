@@ -70,7 +70,9 @@ class MediaViewer extends StatefulWidget {
     this.desktopChromeBuilder,
     this.underMediaBuilder,
   })  : onLoadMore = null,
+        onLoadPrevious = null,
         initialHasMore = false,
+        initialHasPrevious = false,
         loadThreshold = 0;
 
   /// 分页模式构造函数。
@@ -78,9 +80,11 @@ class MediaViewer extends StatefulWidget {
     super.key,
     required List<ViewerItem> initialItems,
     required this.onLoadMore,
+    this.onLoadPrevious,
     required this.pageBuilder,
     this.initialIndex = 0,
     this.initialHasMore = true,
+    this.initialHasPrevious = false,
     this.loadThreshold = 2,
     this.infoBuilder,
     this.pageOverlayBuilder,
@@ -108,10 +112,18 @@ class MediaViewer extends StatefulWidget {
   /// 参数为当前查看器列表中已知的最后一项（可用于业务锚点分析）。
   final Future<PagingResult> Function(ViewerItem lastItem)? onLoadMore;
 
-  /// 初始的分页状态。
+  /// 分页加载回调：向前加载（向前拉取更多）。
+  ///
+  /// 参数为当前查看器列表中已知的第一项。
+  final Future<PagingResult> Function(ViewerItem firstItem)? onLoadPrevious;
+
+  /// 初始的向后分页状态。
   final bool initialHasMore;
 
-  /// 触发预拉取的阈值（默认 2：即滑动到倒数第 2 张时开始加载下一页）。
+  /// 初始的向前分页状态。
+  final bool initialHasPrevious;
+
+  /// 触发预拉取的阈值（默认 2：即滑动到临近边缘时开始加载）。
   final int loadThreshold;
 
   /// 每一页主内容，必填。
@@ -217,9 +229,11 @@ class MediaViewer extends StatefulWidget {
     BuildContext context, {
     required List<ViewerItem> initialItems,
     required Future<PagingResult> Function(ViewerItem lastItem) onLoadMore,
+    Future<PagingResult> Function(ViewerItem firstItem)? onLoadPrevious,
     required ViewerPageBuilder pageBuilder,
     int initialIndex = 0,
     bool initialHasMore = true,
+    bool initialHasPrevious = false,
     int loadThreshold = 2,
     ViewerInfoBuilder? infoBuilder,
     ViewerPageOverlayBuilder? pageOverlayBuilder,
@@ -242,9 +256,11 @@ class MediaViewer extends StatefulWidget {
         builder: (_) => MediaViewer.paging(
           initialItems: initialItems,
           onLoadMore: onLoadMore,
+          onLoadPrevious: onLoadPrevious,
           pageBuilder: pageBuilder,
           initialIndex: initialIndex,
           initialHasMore: initialHasMore,
+          initialHasPrevious: initialHasPrevious,
           loadThreshold: loadThreshold,
           infoBuilder: infoBuilder,
           pageOverlayBuilder: pageOverlayBuilder,
@@ -278,11 +294,11 @@ class _MediaViewerState extends State<MediaViewer>
   late PageController _pageController;
   int _currentIndex = 0;
 
-  // 每页一个信息面板控制器（懒创建，常驻）。
-  final Map<int, InfoSheetController> _infoControllers = {};
+  // 每页一个信息面板控制器（以 item.id 为键，常驻）。
+  final Map<String, InfoSheetController> _infoControllers = {};
 
   // 每页一个缩放上报控制器。
-  final Map<int, ViewerPageController> _pageControllers = {};
+  final Map<String, ViewerPageController> _pageControllers = {};
 
   // 未达关闭阈值时的回弹动画
   late AnimationController _dismissSnapController;
@@ -302,7 +318,11 @@ class _MediaViewerState extends State<MediaViewer>
   // 分页管理
   late List<ViewerItem> _internalItems;
   late bool _hasMore;
+  late bool _hasPrevious;
   bool _isLoadingMore = false;
+  bool _isLoadingPrevious = false;
+  bool _isFirstPageReported = false;
+  bool _isManualJumping = false;
 
   // ── 生命周期 ─────────────────────────────────────────────────────────────
 
@@ -312,6 +332,7 @@ class _MediaViewerState extends State<MediaViewer>
     _internalBarsVisibleNotifier = ValueNotifier<bool>(_barsVisible);
     _internalItems = List.from(widget.items);
     _hasMore = widget.initialHasMore;
+    _hasPrevious = widget.initialHasPrevious;
     _currentIndex = widget.initialIndex.clamp(0, _itemCount - 1);
     _pageController = PageController(initialPage: _currentIndex);
 
@@ -328,6 +349,9 @@ class _MediaViewerState extends State<MediaViewer>
 
     // 监听首页的缩放，以便切换 PageView 的 physics。
     _pageCtrlAt(_currentIndex).addListener(_onCurrentPageZoomChanged);
+
+    // 初始检查：如果当前项数已低于阈值，立即触发加载
+    _checkThreshold();
   }
 
   @override
@@ -367,8 +391,9 @@ class _MediaViewerState extends State<MediaViewer>
   ViewerItem _itemAt(int i) => _internalItems[i];
 
   InfoSheetController _infoCtrlAt(int i) {
+    final item = _itemAt(i);
     return _infoControllers.putIfAbsent(
-      i,
+      item.id,
       () => InfoSheetController(
         vsync: this,
         config: widget.config,
@@ -380,7 +405,7 @@ class _MediaViewerState extends State<MediaViewer>
           if (widget.config.infoSyncMode != InfoSyncMode.mirrored) return;
           if (_isBroadcastingInfoState) return;
 
-          final ctrl = _infoControllers[i];
+          final ctrl = _infoControllers[item.id];
           if (ctrl == null) return;
 
           // 仅同步稳定的状态（动画结束或被命令式调用后）
@@ -410,7 +435,8 @@ class _MediaViewerState extends State<MediaViewer>
   }
 
   ViewerPageController _pageCtrlAt(int i) {
-    return _pageControllers.putIfAbsent(i, ViewerPageController.new);
+    final item = _itemAt(i);
+    return _pageControllers.putIfAbsent(item.id, ViewerPageController.new);
   }
 
   InfoSheetController get _currentInfoCtrl => _infoCtrlAt(_currentIndex);
@@ -421,16 +447,27 @@ class _MediaViewerState extends State<MediaViewer>
   // ── 翻页 ─────────────────────────────────────────────────────────────────
 
   void _onPageChanged(int index) {
+    debugPrint('>>> MediaViewer: _onPageChanged($index), _currentIndex=$_currentIndex, _isFirstPageReported=$_isFirstPageReported, _isManualJumping=$_isManualJumping');
+
+    if (_isManualJumping) {
+      debugPrint('>>> MediaViewer: _onPageChanged ignored due to manual jumping');
+      return;
+    }
+
+    // 初始冗余回调拦截逻辑：仅在首次进入且索引未变时拦截
+    if (!_isFirstPageReported && index == _currentIndex) {
+      _isFirstPageReported = true;
+      debugPrint('>>> MediaViewer: _onPageChanged intercepted (initial)');
+      return;
+    }
+    _isFirstPageReported = true;
+
     _pageCtrlAt(_currentIndex).removeListener(_onCurrentPageZoomChanged);
     _currentIndex = index;
     _pageCtrlAt(_currentIndex).addListener(_onCurrentPageZoomChanged);
 
-    // 分页判定：滑到临近末尾触发加载
-    if (widget.onLoadMore != null && _hasMore && !_isLoadingMore) {
-      if (_itemCount - 1 - index <= widget.loadThreshold) {
-        _triggerLoadMore();
-      }
-    }
+    // 分页判定：滑到临近边缘触发加载
+    _checkThreshold();
 
     widget.controller?.updateIndex(index);
     widget.controller?.updateInfoState(_currentInfoCtrl.state);
@@ -438,6 +475,20 @@ class _MediaViewerState extends State<MediaViewer>
 
     // 同步到上下文：controller 传入
     setState(() {});
+  }
+
+  void _checkThreshold() {
+    final index = _currentIndex;
+    if (widget.onLoadMore != null && _hasMore && !_isLoadingMore) {
+      if (_itemCount - 1 - index <= widget.loadThreshold) {
+        _triggerLoadMore();
+      }
+    }
+    if (widget.onLoadPrevious != null && _hasPrevious && !_isLoadingPrevious) {
+      if (index <= widget.loadThreshold) {
+        _triggerLoadPrevious();
+      }
+    }
   }
 
   Future<void> _triggerLoadMore() async {
@@ -459,9 +510,51 @@ class _MediaViewerState extends State<MediaViewer>
     }
   }
 
+  Future<void> _triggerLoadPrevious() async {
+    if (_isLoadingPrevious || widget.onLoadPrevious == null) return;
+    _isLoadingPrevious = true;
+    try {
+      final firstItem = _internalItems.first;
+      final result = await widget.onLoadPrevious!(firstItem);
+      if (mounted && result.items.isNotEmpty) {
+        setState(() {
+          final newItems = result.items;
+          _internalItems.insertAll(0, newItems);
+          _hasPrevious = result.hasMore;
+
+          // 同步：保持当前看的那张图位置不变
+          final oldIndex = _currentIndex;
+          _isManualJumping = true;
+          _currentIndex = oldIndex + newItems.length;
+          debugPrint('>>> MediaViewer: _triggerLoadPrevious - oldIndex=$oldIndex, newCount=${newItems.length}, newIndex=$_currentIndex');
+
+          _pageController.jumpToPage(_currentIndex);
+
+          // 在微任务中解锁，确保 PageView 的冗余回调已经处理完
+          Future.microtask(() => _isManualJumping = false);
+        });
+      } else if (mounted) {
+        setState(() => _hasPrevious = result.hasMore);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingPrevious = false);
+      }
+    }
+  }
+
   void _appendItemsFromController(List<ViewerItem> newItems) {
     setState(() {
       _internalItems.addAll(newItems);
+    });
+  }
+
+  void _prependItemsFromController(List<ViewerItem> newItems) {
+    if (newItems.isEmpty) return;
+    setState(() {
+      _internalItems.insertAll(0, newItems);
+      _currentIndex += newItems.length;
+      _pageController.jumpToPage(_currentIndex);
     });
   }
 
@@ -475,6 +568,7 @@ class _MediaViewerState extends State<MediaViewer>
       zoomContentOut: _requestZoomOutOnCurrentPage,
       resetContentZoom: _requestZoomResetOnCurrentPage,
       appendItems: _appendItemsFromController,
+      prependItems: _prependItemsFromController,
       removeItem: _removeItemByIdFromController,
       updateItem: _updateItemFromController,
     );
@@ -513,9 +607,9 @@ class _MediaViewerState extends State<MediaViewer>
       }
       _currentIndex = newIndex;
 
-      // 清理懒加载控制器的映射，触发对应关系的重新建立（因为列表结构已变）
-      _infoControllers.clear();
-      _pageControllers.clear();
+      // 清理已删除项的控制器（现在以 ID 为键，精准移除即可）
+      _infoControllers.remove(id)?.dispose();
+      _pageControllers.remove(id)?.dispose();
     });
   }
 
@@ -674,19 +768,22 @@ class _MediaViewerState extends State<MediaViewer>
   bool get _currentHasInfoPanel =>
       _itemAt(_currentIndex).hasInfo && widget.infoBuilder != null;
 
-  ViewerBarContext _barCtx(double dismissProgress) => ViewerBarContext(
-        index: _currentIndex,
-        itemCount: _itemCount,
-        item: _itemAt(_currentIndex),
-        infoState: _currentInfoCtrl.state,
-        dismissProgress: dismissProgress,
-        config: widget.config,
-        barsVisible: _barsVisible,
-        infoRevealProgress: _currentInfoCtrl.revealProgress,
-        isZoomed: _pageCtrlAt(_currentIndex).isZoomed,
-        usesDesktopUi: widget.config.usesDesktopUi,
-        controller: widget.controller,
-      );
+  ViewerBarContext _barCtx(double dismissProgress) {
+    debugPrint('>>> MediaViewer: _barCtx - index=$_currentIndex, itemCount=$_itemCount');
+    return ViewerBarContext(
+      index: _currentIndex,
+      itemCount: _itemCount,
+      item: _itemAt(_currentIndex),
+      infoState: _currentInfoCtrl.state,
+      dismissProgress: dismissProgress,
+      config: widget.config,
+      barsVisible: _barsVisible,
+      infoRevealProgress: _currentInfoCtrl.revealProgress,
+      isZoomed: _pageCtrlAt(_currentIndex).isZoomed,
+      usesDesktopUi: widget.config.usesDesktopUi,
+      controller: widget.controller,
+    );
+  }
 
   // ── build ────────────────────────────────────────────────────────────────
 
@@ -724,7 +821,7 @@ class _MediaViewerState extends State<MediaViewer>
                     onPageChanged: _onPageChanged,
                     itemCount: _itemCount,
                     itemBuilder: (_, i) => ViewerPageShell(
-                      key: ValueKey('page_$i'),
+                      key: ValueKey(_itemAt(i).id),
                       index: i,
                       itemCount: _itemCount,
                       item: _itemAt(i),

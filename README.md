@@ -14,8 +14,10 @@
 - **分页与物理缩放**：
   - 内置高性能 `PageView`。当内容放大时自动拦截翻页手势，确保缩放与翻页互不干扰。
   - **物理级不动点投影**：采用全局坐标投影算法，确保双击缩放点在任何嵌套布局下都能像素级精准对位。
-- **异步分页加载 (Paging)**：
-  - 支持 `openPaging` 模式。滑到列表末尾时自动触发预加载回调，并透传 `lastItem` 辅助业务锚点定位，实现丝滑的无限滚动体验。
+- **双向异步分页加载 (Bi-directional Paging)**：
+  - 支持 `openPaging` 模式。
+  - **向后加载**：滑到列表末尾或初始项数不足时自动触发 `onLoadMore`。
+  - **向前加载**：滑到列表开头或初始项数不足时自动触发 `onLoadPrevious`，并支持头部插入数据后的索引自动纠偏（视觉无跳变）。
 - **插槽系统 (Slots)**：
   - **underMediaBuilder**：支持在媒体层与背景层之间插入自定义布局（如立体投影、底衬装饰），插槽内容随内容同步缩放。
 - **业务数据透传 (Extra Payload)**：
@@ -48,20 +50,27 @@ MediaViewer.open(
 );
 ```
 
-### 2. 异步分页模式 (Paging)
+### 2. 双向异步分页模式 (Paging)
 
 ```dart
 MediaViewer.openPaging(
   context,
-  initialItems: firstPageItems,
+  initialItems: items,
+  initialHasPrevious: true, // 初始是否有上一页
   onLoadMore: (lastItem) async {
-    // 基于最后一项的 ID 请求下一页
     final nextItems = await api.fetchNextPage(after: lastItem.id);
     return PagingResult(items: nextItems, hasMore: true);
+  },
+  onLoadPrevious: (firstItem) async {
+    // 向前加载更多数据
+    final prevItems = await api.fetchPrevPage(before: firstItem.id);
+    return PagingResult(items: prevItems, hasMore: true);
   },
   pageBuilder: (ctx, pageCtx) => Image.network(pageCtx.item.payload),
 );
 ```
+
+> **提示**：框架在初始化时会自动检查 `loadThreshold`。如果初始数据量少于阈值，会立即并发触发向后和向前的加载回调。
 
 ---
 
@@ -75,7 +84,10 @@ MediaViewer.openPaging(
 | `pageBuilder` | **核心插槽**。构建每一页的主内容。 |
 | `underMediaBuilder` | **新增插槽**。媒体层下方的叠加层（如自定义阴影）。 |
 | `pageOverlayBuilder`| **浮层插槽**。随内容翻页，但不会被缩放。 |
-| `onLoadMore` | **分页回调**。接收 `lastItem` 参数，返回 `PagingResult`。 |
+| `onLoadMore` | **向后加载回调**。接收 `lastItem` 参数，返回 `PagingResult`。 |
+| `onLoadPrevious` | **向前加载回调**。接收 `firstItem` 参数，返回 `PagingResult`。 |
+| `initialHasPrevious` | 初始时是否允许向前加载。 |
+| `loadThreshold` | 触发分页加载的阈值（默认 3）。当距离边缘不足此数量时触发回调。 |
 | `theme` | `ViewerTheme`。管理颜色、动效 Duration/Curve。 |
 | `config` | `InteractionConfig`。管理手势阈值、阻尼。 |
 
