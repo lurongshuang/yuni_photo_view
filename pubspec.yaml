@@ -2,7 +2,7 @@ name: yuni_photo_view
 description: >-
   Full-screen Flutter viewer shell: paging, zoom, info sheet, dismiss, bars,
   overlays, desktop toolbar. You render media in pageBuilder; includes Hero helpers.
-version: 0.2.7
+version: 0.2.8
 homepage: https://github.com/lurongshuang/yuni_photo_view
 repository: https://github.com/lurongshuang/yuni_photo_view
 issue_tracker: https://github.com/lurongshuang/yuni_photo_view
@@ -15,8 +15,8 @@ topics:
   - pager
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
-  flutter: '>=3.10.0'
+  sdk: '>=3.9.2 <4.0.0'
+  flutter: ">=3.3.0"
 
 dependencies:
   flutter:

@@ -68,13 +68,7 @@ class ViewerHero extends StatelessWidget {
     this.errorBuilder,
     this.imageCustom,
     super.key,
-  }) {
-    if (errorBuilder == null) {
-      debugPrint('ViewerHero.image (tag: $tag) created with NULL errorBuilder!');
-      // 打印前 5 行堆栈即可精确定位
-      debugPrint(StackTrace.current.toString().split('\n').take(8).join('\n'));
-    }
-  }
+  });
 
   const ViewerHero.custom({
     required this.tag,
@@ -211,7 +205,6 @@ class ViewerHero extends StatelessWidget {
       viewerSize = fromSize;
     }
 
-    debugPrint('ViewerHero: _defaultShuttleBuilder called. errorBuilder is null: ${errorBuilder == null}');
     return _HeroShuttleWidget(
       imageProvider: imageProvider!,
       animation: animation,
@@ -358,7 +351,8 @@ class _HeroShuttleWidgetState extends State<_HeroShuttleWidget> {
           }
           // 兜底：如果手动解析捕获到错误但没传 errorBuilder，防止显示原始错误文本
           return const Center(
-            child: Icon(Icons.broken_image_outlined, color: Colors.white24, size: 40),
+            child: Icon(Icons.broken_image_outlined,
+                color: Colors.white24, size: 40),
           );
         }
 
@@ -385,12 +379,14 @@ class _HeroShuttleWidgetState extends State<_HeroShuttleWidget> {
                       fit: BoxFit.contain,
                       gaplessPlayback: true,
                       loadingBuilder: widget.loadingBuilder,
-                      errorBuilder: widget.errorBuilder ?? (context, error, stackTrace) {
-                        // 兜底：如果 Image 组件报错且没传 errorBuilder，防止显示原始错误文本
-                        return const Center(
-                          child: Icon(Icons.broken_image_outlined, color: Colors.white24, size: 40),
-                        );
-                      },
+                      errorBuilder: widget.errorBuilder ??
+                          (context, error, stackTrace) {
+                            // 兜底：如果 Image 组件报错且没传 errorBuilder，防止显示原始错误文本
+                            return const Center(
+                              child: Icon(Icons.broken_image_outlined,
+                                  color: Colors.white24, size: 40),
+                            );
+                          },
                     )),
         );
       },
